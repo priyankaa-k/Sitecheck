@@ -3,7 +3,7 @@ from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Boolean, Dat
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 
-
+#create projects
 class Project(Base):
     __tablename__ = "projects"
 
