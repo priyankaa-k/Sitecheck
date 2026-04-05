@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="theme-color" content="#1E3A5F">
+  <meta name="description" content="Construction quality control checklist for Canadian residential builds">
+  <title>SiteCheck</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <!-- Top Bar -->
+  <header class="top-bar" id="top-bar">
+    <div class="top-bar-left">
+      <button class="top-back-btn" id="top-back-btn" aria-label="Go back">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+      </button>
+      <div class="logo-mark" id="logo-mark">
+        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+      </div>
+      <span class="top-title" id="top-title">SiteCheck</span>
+    </div>
+    <div class="top-bar-right">
+      <button class="top-icon-btn" id="search-btn" title="Search" style="display:none">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="M21 21l-4.35-4.35"/></svg>
+      </button>
+      <button class="top-icon-btn" id="filter-btn" title="Filter" style="display:none">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M6 12h12M8 18h8"/></svg>
+      </button>
+      <button class="top-icon-btn" id="archive-btn" title="Archive">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v9a2 2 0 002 2h12a2 2 0 002-2V8M10 12h4"/></svg>
+      </button>
+      <button class="top-action-btn" id="new-project-btn">+ New</button>
+    </div>
+  </header>
+
+  <!-- Main Content -->
+  <main class="main-content" id="content"></main>
+
+  <!-- Bottom Nav -->
+  <nav class="bottom-nav" id="bottom-nav">
+    <button class="nav-item active" data-tab="home">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
+      <span>Home</span>
+    </button>
+    <button class="nav-item" data-tab="projects">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+      <span>Projects</span>
+    </button>
+    <button class="nav-item" data-tab="template">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="6" height="4" rx="1"/><path d="M9 12h6M9 16h6"/></svg>
+      <span>Template</span>
+    </button>
+    <button class="nav-item" data-tab="reports">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M18 20V10M12 20V4M6 20v-6"/></svg>
+      <span>Reports</span>
+    </button>
+    <button class="nav-item" data-tab="more">
+      <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="12" cy="5" r="1.5"/><circle cx="12" cy="12" r="1.5"/><circle cx="12" cy="19" r="1.5"/></svg>
+      <span>More</span>
+    </button>
+  </nav>
+
+  <!-- Comment Bottom Sheet -->
+  <div class="sheet-overlay" id="sheet-overlay"></div>
+  <div class="bottom-sheet" id="comment-sheet">
+    <div class="sheet-handle"></div>
+    <h3 class="sheet-title">Comment</h3>
+    <textarea class="sheet-textarea" id="comment-input" placeholder="Add a comment..." rows="4"></textarea>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="comment-cancel">Cancel</button>
+      <button class="btn btn-primary" id="comment-save">Save</button>
+    </div>
+  </div>
+
+  <!-- Search Sheet -->
+  <div class="bottom-sheet" id="search-sheet">
+    <div class="sheet-handle"></div>
+    <h3 class="sheet-title">Search</h3>
+    <input class="sheet-input" id="search-input" placeholder="Search checklist items..." autofocus>
+    <div id="search-results" class="search-results"></div>
+    <div class="sheet-actions">
+      <button class="btn btn-ghost" id="search-close">Close</button>
+    </div>
+  </div>
+
+  <!-- Modal -->
+  <div class="modal-overlay" id="modal-overlay">
+    <div class="modal" id="modal-body"></div>
+  </div>
+
+  <!-- Bulk Action Bar -->
+  <div class="bulk-bar" id="bulk-bar">
+    <span class="bulk-count" id="bulk-count">0 selected</span>
+    <div class="bulk-actions">
+      <button class="bulk-btn confirmed" data-action="confirmed" title="Confirm">&#10003;</button>
+      <button class="bulk-btn flagged" data-action="flagged" title="Flag">&#9873;</button>
+      <button class="bulk-btn na" data-action="na" title="N/A">N/A</button>
+      <button class="bulk-btn reset" data-action="unchecked" title="Reset">&#8634;</button>
+      <button class="bulk-btn cancel" id="bulk-cancel">Cancel</button>
+    </div>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="filter-bar" id="filter-bar" style="display:none">
+    <button class="filter-chip active" data-filter="all">All</button>
+    <button class="filter-chip unchecked" data-filter="unchecked">Unchecked</button>
+    <button class="filter-chip flagged" data-filter="flagged">Flagged</button>
+    <button class="filter-chip confirmed" data-filter="confirmed">Confirmed</button>
+    <button class="filter-chip na-filter" data-filter="na">N/A</button>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
