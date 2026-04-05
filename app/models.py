@@ -16,7 +16,7 @@ class Project(Base):
     is_template: Mapped[bool] = mapped_column(Boolean, default=False)
     is_archived: Mapped[bool] = mapped_column(Boolean, default=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     phases: Mapped[list["Phase"]] = relationship(
@@ -36,7 +36,7 @@ class ProjectNote(Base):
     content: Mapped[str] = mapped_column(Text, nullable=False)
     project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
     created_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc)
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
     project: Mapped["Project"] = relationship(back_populates="notes")
@@ -87,7 +87,7 @@ class ChecklistItem(Base):
     is_custom: Mapped[bool] = mapped_column(Boolean, default=False)
     sort_order: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(
-        DateTime, default=lambda: datetime.now(timezone.utc),
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc),
         onupdate=lambda: datetime.now(timezone.utc),
     )
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)

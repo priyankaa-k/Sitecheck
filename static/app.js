@@ -138,7 +138,9 @@ $topBack.onclick = goBack;
 // ── Tab switching ────────────────────────────────────────────────────
 function switchTab(tab) {
   currentTab = tab;
+  // Update both mobile bottom nav and desktop sidebar
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
+  document.querySelectorAll('.side-nav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   if (tab === 'home') navigateTo('dashboard');
   else if (tab === 'projects') navigateTo('projects');
   else if (tab === 'template') navigateTo('template');
@@ -146,7 +148,13 @@ function switchTab(tab) {
   else if (tab === 'more') navigateTo('more');
 }
 
+// Mobile bottom nav
 document.querySelectorAll('.nav-item').forEach(btn => {
+  btn.addEventListener('click', () => switchTab(btn.dataset.tab));
+});
+
+// Desktop sidebar nav
+document.querySelectorAll('.side-nav-item').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
 
@@ -213,9 +221,11 @@ async function loadDashboard() {
       </div>`;
   } else {
     html += '<div class="section-title">Active Projects</div>';
+    html += '<div class="p-grid-desktop">';
     data.active_projects.forEach(p => {
       html += renderProjectCard(p);
     });
+    html += '</div>';
   }
 
   $content.innerHTML = html;
@@ -271,7 +281,7 @@ async function loadProjects() {
       </div>`;
     return;
   }
-  $content.innerHTML = projects.map(p => renderProjectCard(p)).join('');
+  $content.innerHTML = '<div class="p-grid-desktop">' + projects.map(p => renderProjectCard(p)).join('') + '</div>';
   bindProjectCards();
 }
 

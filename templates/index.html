@@ -14,35 +14,69 @@
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <!-- Top Bar -->
-  <header class="top-bar" id="top-bar">
-    <div class="top-bar-left">
-      <button class="top-back-btn" id="top-back-btn" aria-label="Go back">
-        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
-      </button>
-      <div class="logo-mark" id="logo-mark">
-        <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+  <div class="desktop-container">
+    <!-- Desktop Sidebar -->
+    <aside class="sidebar">
+      <div class="logo-section">
+        <span class="logo-wordmark">Site<em>Check</em></span>
       </div>
-      <span class="top-title" id="top-title">SiteCheck</span>
-    </div>
-    <div class="top-bar-right">
-      <button class="top-icon-btn" id="search-btn" title="Search" style="display:none">
-        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="M21 21l-4.35-4.35"/></svg>
-      </button>
-      <button class="top-icon-btn" id="filter-btn" title="Filter" style="display:none">
-        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M6 12h12M8 18h8"/></svg>
-      </button>
-      <button class="top-icon-btn" id="archive-btn" title="Archive">
-        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v9a2 2 0 002 2h12a2 2 0 002-2V8M10 12h4"/></svg>
-      </button>
-      <button class="top-action-btn" id="new-project-btn">+ New</button>
-    </div>
-  </header>
+      <nav class="side-nav">
+        <div class="side-nav-item active" data-tab="home">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
+          Dashboard
+        </div>
+        <div class="side-nav-item" data-tab="projects">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="3" width="5" height="5" rx="1"/><rect x="12" y="3" width="5" height="5" rx="1"/><rect x="3" y="12" width="5" height="5" rx="1"/><rect x="12" y="12" width="5" height="5" rx="1"/></svg>
+          Projects
+        </div>
+        <div class="side-nav-item" data-tab="template">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M9 5H7a2 2 0 00-2 2v10a2 2 0 002 2h8a2 2 0 002-2V7a2 2 0 00-2-2h-2"/><rect x="9" y="3" width="4" height="3" rx="1"/><path d="M9 11h4M9 14h4"/></svg>
+          Template
+        </div>
+        <div class="side-nav-item" data-tab="reports">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M16 18V9M10 18V4M4 18v-5"/></svg>
+          Reports
+        </div>
+        <div class="side-nav-item" data-tab="more">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.8"><circle cx="9" cy="4" r="1.2"/><circle cx="9" cy="10" r="1.2"/><circle cx="9" cy="16" r="1.2"/></svg>
+          More
+        </div>
+      </nav>
+    </aside>
 
-  <!-- Main Content -->
-  <main class="main-content" id="content"></main>
+    <!-- Main Area -->
+    <div class="main-area">
+      <!-- Top Bar -->
+      <header class="top-header" id="top-bar">
+        <div class="top-bar-left">
+          <button class="top-back-btn" id="top-back-btn" aria-label="Go back">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 18l-6-6 6-6"/></svg>
+          </button>
+          <div class="logo-mark" id="logo-mark">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 12l2 2 4-4"/><rect x="3" y="3" width="18" height="18" rx="3"/></svg>
+          </div>
+          <span class="top-title" id="top-title">Dashboard</span>
+        </div>
+        <div class="top-bar-right">
+          <button class="top-icon-btn" id="search-btn" title="Search" style="display:none">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="10" cy="10" r="6"/><path d="M21 21l-4.35-4.35"/></svg>
+          </button>
+          <button class="top-icon-btn" id="filter-btn" title="Filter" style="display:none">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 6h16M6 12h12M8 18h8"/></svg>
+          </button>
+          <button class="top-icon-btn" id="archive-btn" title="Archive">
+            <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><rect x="2" y="3" width="20" height="5" rx="1"/><path d="M4 8v9a2 2 0 002 2h12a2 2 0 002-2V8M10 12h4"/></svg>
+          </button>
+          <button class="plus-btn-desktop" id="new-project-btn">+ New Project</button>
+        </div>
+      </header>
 
-  <!-- Bottom Nav -->
+      <!-- Main Content -->
+      <main class="main-content" id="content"></main>
+    </div>
+  </div>
+
+  <!-- Bottom Nav (mobile only) -->
   <nav class="bottom-nav" id="bottom-nav">
     <button class="nav-item active" data-tab="home">
       <svg width="22" height="22" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M3 9.5L12 3l9 6.5V20a1 1 0 01-1 1H4a1 1 0 01-1-1V9.5z"/><path d="M9 21V12h6v9"/></svg>
