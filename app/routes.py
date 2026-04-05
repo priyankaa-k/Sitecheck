@@ -319,21 +319,19 @@ async def create_item(category_id: int, data: ItemCreate, db: AsyncSession = Dep
     if data.tag not in VALID_TAGS:
         raise HTTPException(400, f"Invalid tag. Must be one of: {VALID_TAGS}")
     count = await db.scalar(select(func.count()).where(ChecklistItem.category_id == category_id))
-    is_custom = data.tag == "CUSTOM"
     item = ChecklistItem(
-        description=data.description, tag=data.tag, is_custom=is_custom,
+        description=data.description, tag=data.tag, is_custom=True,
         sort_order=data.sort_order if data.sort_order is not None else count,
         category_id=category_id,
     )
     db.add(item)
 
-    # If custom, also push to master template
-    if is_custom:
-        phase = await db.get(Phase, category.phase_id)
-        if phase:
-            project = await db.get(Project, phase.project_id)
-            if project and not project.is_template:
-                await _push_custom_to_template(db, phase.name, category.name, data.description)
+    # Sync new item to template and all other projects
+    phase = await db.get(Phase, category.phase_id)
+    if phase:
+        project = await db.get(Project, phase.project_id)
+        if project and not project.is_template:
+            await _sync_item_to_all(db, project.id, phase.name, category.name, data.description, data.tag)
 
     await db.commit()
     await db.refresh(item)
@@ -345,27 +343,17 @@ async def create_item(category_id: int, data: ItemCreate, db: AsyncSession = Dep
     )
 
 
-async def _push_custom_to_template(db: AsyncSession, phase_name: str, category_name: str, description: str):
-    """Push a custom item to the master template."""
-    template_result = await db.execute(
-        select(Project)
-        .where(Project.is_template == True)
-        .options(*_project_eager_options())
-        .limit(1)
-    )
-    template = template_result.scalar_one_or_none()
-    if not template:
-        return
-
+async def _add_item_to_project(db: AsyncSession, project, phase_name: str, category_name: str, description: str, tag: str):
+    """Add an item to a project's matching phase/category, creating them if needed."""
     # Find matching phase
     target_phase = None
-    for ph in template.phases:
+    for ph in project.phases:
         if ph.name == phase_name:
             target_phase = ph
             break
     if not target_phase:
-        count = len(template.phases)
-        target_phase = Phase(name=phase_name, sort_order=count, project_id=template.id)
+        count = len(project.phases)
+        target_phase = Phase(name=phase_name, sort_order=count, project_id=project.id)
         db.add(target_phase)
         await db.flush()
 
@@ -381,13 +369,29 @@ async def _push_custom_to_template(db: AsyncSession, phase_name: str, category_n
         db.add(target_cat)
         await db.flush()
 
-    # Add item
+    # Check if item already exists in this category (avoid duplicates)
+    for existing in target_cat.items:
+        if existing.description == description:
+            return
+
     count = len(target_cat.items)
-    template_item = ChecklistItem(
-        description=description, tag="CUSTOM", is_custom=True,
+    new_item = ChecklistItem(
+        description=description, tag=tag, is_custom=True,
         sort_order=count, category_id=target_cat.id,
     )
-    db.add(template_item)
+    db.add(new_item)
+
+
+async def _sync_item_to_all(db: AsyncSession, source_project_id: int, phase_name: str, category_name: str, description: str, tag: str):
+    """Sync a new item to the master template and all other non-archived projects."""
+    result = await db.execute(
+        select(Project)
+        .where(Project.id != source_project_id, Project.is_archived == False)
+        .options(*_project_eager_options())
+    )
+    projects = result.scalars().unique().all()
+    for project in projects:
+        await _add_item_to_project(db, project, phase_name, category_name, description, tag)
 
 
 @router.patch("/items/{item_id}/status", response_model=ItemOut)

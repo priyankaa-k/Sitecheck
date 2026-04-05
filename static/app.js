@@ -3,20 +3,18 @@
    ══════════════════════════════════════════════════════════════════════ */
 
 const API = '/api';
-const STATUS_CYCLE = ['unchecked', 'flagged', 'confirmed', 'na'];
 const STATUS_LABELS = { unchecked: 'Unchecked', flagged: 'Flagged', confirmed: 'Confirmed', na: 'N/A' };
 const STATUS_ICONS = { unchecked: '○', flagged: '⚑', confirmed: '✓', na: '—' };
 const TAG_LABELS = ['VERIFY','ACTION','CLIENT','PRIOR TO ORDER','PRIOR TO POUR','INFORM CONTRACTOR','CUSTOM'];
 
 // ── State ────────────────────────────────────────────────────────────
 let currentTab = 'home';
-let navStack = []; // [{view, data}]
+let navStack = [];
 let currentProject = null;
 let currentPhase = null;
 let activeFilter = 'all';
 let bulkSelected = new Set();
 let bulkMode = false;
-let longPressTimer = null;
 let commentItemId = null;
 
 // ── DOM refs ─────────────────────────────────────────────────────────
@@ -50,16 +48,10 @@ async function api(path, opts = {}) {
 // ── Utility ──────────────────────────────────────────────────────────
 function esc(s) { const d = document.createElement('div'); d.textContent = s || ''; return d.innerHTML; }
 function initials(name) { return name.split(' ').map(w => w[0]).join('').toUpperCase().slice(0, 2); }
-
-function tagClass(tag) {
-  return tag.replace(/\s+/g, '_');
-}
+function tagClass(tag) { return tag.replace(/\s+/g, '_'); }
 
 // ── Navigation ───────────────────────────────────────────────────────
 function navigateTo(view, data, pushStack = true) {
-  if (pushStack && navStack.length > 0) {
-    // save current
-  }
   exitBulkMode();
   activeFilter = 'all';
   $filterBar.style.display = 'none';
@@ -70,7 +62,7 @@ function navigateTo(view, data, pushStack = true) {
 
   if (view === 'dashboard') {
     navStack = [{ view: 'dashboard' }];
-    setTopBar('SiteCheck', false, { search: false, filter: false, archive: true, newBtn: true });
+    setTopBar('Dashboard', false, { search: false, filter: false, archive: true, newBtn: true });
     loadDashboard();
   } else if (view === 'projects') {
     navStack = [{ view: 'projects' }];
@@ -138,7 +130,6 @@ $topBack.onclick = goBack;
 // ── Tab switching ────────────────────────────────────────────────────
 function switchTab(tab) {
   currentTab = tab;
-  // Update both mobile bottom nav and desktop sidebar
   document.querySelectorAll('.nav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   document.querySelectorAll('.side-nav-item').forEach(el => el.classList.toggle('active', el.dataset.tab === tab));
   if (tab === 'home') navigateTo('dashboard');
@@ -148,12 +139,9 @@ function switchTab(tab) {
   else if (tab === 'more') navigateTo('more');
 }
 
-// Mobile bottom nav
 document.querySelectorAll('.nav-item').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
-
-// Desktop sidebar nav
 document.querySelectorAll('.side-nav-item').forEach(btn => {
   btn.addEventListener('click', () => switchTab(btn.dataset.tab));
 });
@@ -178,11 +166,7 @@ document.querySelectorAll('.filter-chip').forEach(chip => {
 
 function applyFilter() {
   document.querySelectorAll('.item-card').forEach(card => {
-    if (activeFilter === 'all') {
-      card.style.display = '';
-    } else {
-      card.style.display = card.dataset.status === activeFilter ? '' : 'none';
-    }
+    card.style.display = (activeFilter === 'all' || card.dataset.status === activeFilter) ? '' : 'none';
   });
 }
 
@@ -194,7 +178,36 @@ function applyFilter() {
 async function loadDashboard() {
   const data = await api('/dashboard');
 
-  let html = '';
+  // Compute overall stats
+  let totalProjects = data.active_projects.length;
+  let totalItems = 0, totalConfirmed = 0, totalFlagged = data.total_flagged;
+  data.active_projects.forEach(p => {
+    totalItems += p.total_items;
+    totalConfirmed += p.confirmed_count;
+  });
+  const overallPct = totalItems > 0 ? Math.round((totalConfirmed / totalItems) * 100) : 0;
+
+  let html = `
+    <div class="dash-hero">
+      <div class="dash-hero-greeting">
+        <h2 class="dash-hero-title">Welcome to Site<em>Check</em></h2>
+        <p class="dash-hero-subtitle">Construction quality control at your fingertips</p>
+      </div>
+      <div class="dash-stats-row">
+        <div class="dash-stat-card">
+          <div class="dash-stat-number">${totalProjects}</div>
+          <div class="dash-stat-label">Active Projects</div>
+        </div>
+        <div class="dash-stat-card">
+          <div class="dash-stat-number">${overallPct}%</div>
+          <div class="dash-stat-label">Overall Progress</div>
+        </div>
+        <div class="dash-stat-card accent">
+          <div class="dash-stat-number">${totalFlagged}</div>
+          <div class="dash-stat-label">Flagged Items</div>
+        </div>
+      </div>
+    </div>`;
 
   // Attention widget
   if (data.total_flagged > 0) {
@@ -217,7 +230,7 @@ async function loadDashboard() {
           <svg width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="26" height="26" rx="4"/><path d="M16 10v12M10 16h12"/></svg>
         </div>
         <div class="empty-title">No active projects</div>
-        <div class="empty-desc">Tap "+ New" to create your first project and start inspecting.</div>
+        <div class="empty-desc">Tap "+ New Project" to create your first project and start inspecting.</div>
       </div>`;
   } else {
     html += '<div class="section-title">Active Projects</div>';
@@ -230,11 +243,8 @@ async function loadDashboard() {
 
   $content.innerHTML = html;
 
-  // Event: attention widget
   const aw = $('#attention-widget');
   if (aw) aw.onclick = () => navigateTo('flagged');
-
-  // Event: project cards
   bindProjectCards();
 }
 
@@ -292,9 +302,9 @@ async function loadProjectDetail(projectId) {
 
   let html = `
     <div style="display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap">
-      <button class="btn btn-ghost" id="proj-notes-btn" style="font-size:.8rem">📝 Notes</button>
-      <button class="btn btn-ghost" id="proj-archive-btn" style="font-size:.8rem">📦 Archive</button>
-      <button class="btn btn-ghost" id="proj-delete-btn" style="font-size:.8rem;color:var(--flagged)">🗑 Delete</button>
+      <button class="btn btn-ghost" id="proj-notes-btn" style="font-size:.8rem">Notes</button>
+      <button class="btn btn-ghost" id="proj-archive-btn" style="font-size:.8rem">Archive</button>
+      <button class="btn btn-ghost" id="proj-delete-btn" style="font-size:.8rem;color:var(--flagged)">Delete</button>
     </div>`;
 
   if (project.client_name || project.site_address || project.supervisor) {
@@ -332,7 +342,6 @@ async function loadProjectDetail(projectId) {
 
   $content.innerHTML = html;
 
-  // Events
   $('#proj-notes-btn').onclick = () => navigateTo('project-notes', project);
   $('#proj-archive-btn').onclick = async () => {
     if (confirm('Archive this project?')) {
@@ -370,7 +379,6 @@ async function loadPhaseDetail(phaseId) {
     return;
   }
 
-  // Stats
   let total = 0, counts = { unchecked: 0, flagged: 0, confirmed: 0, na: 0 };
   categories.forEach(c => c.items.forEach(i => { total++; counts[i.status]++; }));
   const active = total - counts.na;
@@ -391,7 +399,7 @@ async function loadPhaseDetail(phaseId) {
       </div>
     </div>`;
 
-  // Filter bar placeholder (positioned in main content flow)
+  html += `<div class="item-hint">Tap = Approve &nbsp; Double-tap = Flag &nbsp; Swipe left = N/A</div>`;
   html += `<div id="filter-bar-slot"></div>`;
 
   categories.forEach(cat => {
@@ -404,21 +412,16 @@ async function loadPhaseDetail(phaseId) {
 
   $content.innerHTML = html;
 
-  // Move filter bar into slot
   const slot = document.getElementById('filter-bar-slot');
   if (slot) slot.appendChild($filterBar);
 
   bindItemCards(phaseId);
 
-  // Add item buttons
   $content.querySelectorAll('.add-item-btn').forEach(btn => {
     btn.addEventListener('click', () => openAddItemModal(parseInt(btn.dataset.catId), btn.dataset.catName, phaseId));
   });
 
-  // Check if phase is newly complete
-  if (pct === 100 && active > 0) {
-    triggerConfetti();
-  }
+  if (pct === 100 && active > 0) triggerConfetti();
 }
 
 function renderItemCard(item) {
@@ -429,16 +432,13 @@ function renderItemCard(item) {
         <div class="item-desc">${esc(item.description)}</div>
         <div class="item-meta">
           <span class="tag-badge ${tagClass(item.tag)}" data-tag="${item.tag}">${esc(item.tag)}</span>
-          ${item.is_custom ? '<span class="tag-badge CUSTOM">CUSTOM</span>' : ''}
+          <span class="item-status-label ${item.status}">${STATUS_LABELS[item.status]}</span>
         </div>
-        ${hasComment ? `<div style="font-size:.75rem;color:var(--text-secondary);margin-top:4px;font-style:italic;padding-left:8px;border-left:2px solid var(--border)">💬 ${esc(item.comment)}</div>` : ''}
+        ${hasComment ? `<div style="font-size:.75rem;color:var(--text-secondary);margin-top:4px;font-style:italic;padding-left:8px;border-left:2px solid var(--border)">${esc(item.comment)}</div>` : ''}
       </div>
       <div class="comment-icon ${hasComment ? 'has-comment' : ''}" data-id="${item.id}" title="Comment">
         <svg width="20" height="20" fill="${hasComment ? 'currentColor' : 'none'}" stroke="currentColor" stroke-width="1.5"><path d="M21 15a2 2 0 01-2 2H7l-4 4V5a2 2 0 012-2h14a2 2 0 012 2z"/></svg>
       </div>
-      <button class="status-indicator" data-status="${item.status}" data-id="${item.id}">
-        ${STATUS_ICONS[item.status]}
-      </button>
     </div>`;
 }
 
@@ -456,50 +456,83 @@ function bindItemCards(phaseId) {
       openCommentSheet(parseInt(itemId), phaseId);
     });
 
-    // Status button — single tap: unchecked→flagged, double tap: →confirmed
-    const statusBtn = card.querySelector('.status-indicator');
-    statusBtn.addEventListener('click', async (e) => {
-      e.stopPropagation();
-      if (bulkMode) {
-        toggleBulkSelect(card);
+    // Swipe left for N/A
+    let touchStartX = 0;
+    let touchStartY = 0;
+    let swiping = false;
+
+    card.addEventListener('touchstart', (e) => {
+      touchStartX = e.touches[0].clientX;
+      touchStartY = e.touches[0].clientY;
+      swiping = false;
+    }, { passive: true });
+
+    card.addEventListener('touchmove', (e) => {
+      const dx = e.touches[0].clientX - touchStartX;
+      const dy = Math.abs(e.touches[0].clientY - touchStartY);
+      if (dx < -30 && dy < 30) {
+        swiping = true;
+        card.style.transform = `translateX(${Math.max(dx, -100)}px)`;
+        card.style.opacity = Math.max(0.5, 1 + dx / 200);
+      }
+    }, { passive: true });
+
+    card.addEventListener('touchend', async () => {
+      if (swiping) {
+        card.style.transition = 'transform .2s, opacity .2s';
+        card.style.transform = '';
+        card.style.opacity = '';
+        setTimeout(() => { card.style.transition = ''; }, 200);
+        // Swipe left → N/A
+        await api(`/items/${itemId}/status`, { method: 'PATCH', body: { status: 'na' } });
+        loadPhaseDetail(phaseId);
+        swiping = false;
         return;
       }
+    });
+
+    // Click handling: single tap = confirm, double tap = flag
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('.comment-icon')) return;
+      if (swiping) return;
+      if (bulkMode) { toggleBulkSelect(card); return; }
 
       const now = Date.now();
       const isDoubleTap = (now - lastTap < 350) && (lastTapId === itemId);
       lastTap = now;
       lastTapId = itemId;
 
-      const currentStatus = card.dataset.status;
-
       if (isDoubleTap) {
-        // Double tap → confirmed
-        await api(`/items/${itemId}/status`, { method: 'PATCH', body: { status: 'confirmed' } });
-        loadPhaseDetail(phaseId);
+        // Double tap → flagged
+        clearTimeout(card._tapTimer);
+        (async () => {
+          await api(`/items/${itemId}/status`, { method: 'PATCH', body: { status: 'flagged' } });
+          loadPhaseDetail(phaseId);
+        })();
         return;
       }
 
-      // Wait a bit to see if double tap comes
-      setTimeout(async () => {
+      // Wait to see if double tap comes
+      card._tapTimer = setTimeout(async () => {
         if (Date.now() - lastTap >= 300 || lastTapId !== itemId) {
-          // Single tap
-          if (currentStatus === 'unchecked') {
-            await api(`/items/${itemId}/status`, { method: 'PATCH', body: { status: 'flagged' } });
+          const currentStatus = card.dataset.status;
+          if (currentStatus === 'unchecked' || currentStatus === 'flagged') {
+            // Single tap → confirmed
+            await api(`/items/${itemId}/status`, { method: 'PATCH', body: { status: 'confirmed' } });
             loadPhaseDetail(phaseId);
           } else if (currentStatus === 'confirmed' || currentStatus === 'na') {
-            showActionMenu(parseInt(itemId), card, phaseId);
-          } else if (currentStatus === 'flagged') {
+            // Already confirmed/na → show action menu to change
             showActionMenu(parseInt(itemId), card, phaseId);
           }
         }
       }, 350);
     });
 
-    // Long press — action menu or bulk mode
+    // Long press → bulk mode
     let pressTimer;
-    card.addEventListener('touchstart', (e) => {
+    card.addEventListener('touchstart', () => {
       pressTimer = setTimeout(() => {
-        if (!bulkMode) {
+        if (!bulkMode && !swiping) {
           enterBulkMode();
           toggleBulkSelect(card);
         }
@@ -508,36 +541,26 @@ function bindItemCards(phaseId) {
     card.addEventListener('touchend', () => clearTimeout(pressTimer));
     card.addEventListener('touchmove', () => clearTimeout(pressTimer));
 
-    // Desktop: contextmenu
+    // Desktop right-click
     card.addEventListener('contextmenu', (e) => {
       e.preventDefault();
-      if (!bulkMode) {
-        showActionMenu(parseInt(itemId), card, phaseId);
-      }
-    });
-
-    // In bulk mode, tap card to select
-    card.addEventListener('click', () => {
-      if (bulkMode) {
-        toggleBulkSelect(card);
-      }
+      if (!bulkMode) showActionMenu(parseInt(itemId), card, phaseId);
     });
   });
 }
 
 // ── Action Menu ──────────────────────────────────────────────────────
 function showActionMenu(itemId, anchorEl, phaseId) {
-  // Remove existing
   document.querySelectorAll('.action-menu').forEach(m => m.remove());
 
   const menu = document.createElement('div');
   menu.className = 'action-menu open';
   menu.innerHTML = `
-    <button class="action-menu-item" data-action="na"><div class="dot" style="background:var(--na)"></div>Mark as N/A</button>
-    <button class="action-menu-item" data-action="confirmed"><div class="dot" style="background:var(--confirmed)"></div>Mark Confirmed</button>
-    <button class="action-menu-item" data-action="flagged"><div class="dot" style="background:var(--flagged)"></div>Mark Flagged</button>
-    <button class="action-menu-item" data-action="unchecked"><div class="dot" style="background:var(--unchecked)"></div>Reset to Unchecked</button>
-    <button class="action-menu-item" data-action="comment">💬 Add / Edit Comment</button>
+    <button class="action-menu-item" data-action="confirmed"><div class="dot" style="background:var(--confirmed)"></div>Approve</button>
+    <button class="action-menu-item" data-action="flagged"><div class="dot" style="background:var(--flagged)"></div>Flag</button>
+    <button class="action-menu-item" data-action="na"><div class="dot" style="background:var(--na)"></div>N/A</button>
+    <button class="action-menu-item" data-action="unchecked"><div class="dot" style="background:var(--unchecked)"></div>Reset</button>
+    <button class="action-menu-item" data-action="comment">Add / Edit Comment</button>
   `;
 
   const rect = anchorEl.getBoundingClientRect();
@@ -558,7 +581,6 @@ function showActionMenu(itemId, anchorEl, phaseId) {
     });
   });
 
-  // Close on outside click
   setTimeout(() => {
     document.addEventListener('click', function handler(e) {
       if (!menu.contains(e.target)) {
@@ -617,9 +639,8 @@ document.querySelectorAll('.bulk-btn[data-action]').forEach(btn => {
 // ── Comment Sheet ────────────────────────────────────────────────────
 function openCommentSheet(itemId, phaseId) {
   commentItemId = itemId;
-  // Find current comment
   const card = document.querySelector(`.item-card[data-id="${itemId}"]`);
-  const existing = card ? (card.querySelector('[style*="font-style"]')?.textContent?.replace('💬 ', '') || '') : '';
+  const existing = card ? (card.querySelector('[style*="font-style"]')?.textContent || '') : '';
   $('#comment-input').value = existing;
   $sheetOverlay.classList.add('open');
   $commentSheet.classList.add('open');
@@ -711,23 +732,68 @@ async function loadTemplate() {
     return;
   }
 
-  let html = `<div style="font-size:.82rem;color:var(--text-secondary);margin-bottom:12px">This is the master checklist. New projects clone from this template.</div>`;
+  let totalItems = 0;
+  template.phases.forEach(ph => ph.categories.forEach(c => totalItems += c.items.length));
 
-  template.phases.forEach(phase => {
-    html += `<div class="section-title">${esc(phase.name)}</div>`;
+  let html = `
+    <div class="template-header">
+      <div class="template-header-info">
+        <h3>Master Checklist Template</h3>
+        <p>${template.phases.length} phases &middot; ${totalItems} items</p>
+        <p class="template-hint">New projects are cloned from this template. Items added in any project sync back here.</p>
+      </div>
+    </div>`;
+
+  template.phases.forEach((phase, pi) => {
+    let phaseItemCount = 0;
+    phase.categories.forEach(c => phaseItemCount += c.items.length);
+
+    html += `
+      <div class="tmpl-phase">
+        <div class="tmpl-phase-header" data-phase-idx="${pi}">
+          <div class="tmpl-phase-number">${pi + 1}</div>
+          <div class="tmpl-phase-info">
+            <div class="tmpl-phase-name">${esc(phase.name)}</div>
+            <div class="tmpl-phase-meta">${phase.categories.length} categories &middot; ${phaseItemCount} items</div>
+          </div>
+          <svg class="tmpl-chevron" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 9l6 6 6-6"/></svg>
+        </div>
+        <div class="tmpl-phase-body" id="tmpl-phase-${pi}">`;
+
     phase.categories.forEach(cat => {
-      html += `<div style="font-size:.78rem;font-weight:600;color:var(--navy);padding:8px 0 4px">${esc(cat.name)} (${cat.items.length})</div>`;
+      html += `
+          <div class="tmpl-category">
+            <div class="tmpl-cat-name">${esc(cat.name)} <span class="tmpl-cat-count">${cat.items.length}</span></div>
+            <div class="tmpl-items">`;
       cat.items.forEach(item => {
         html += `
-          <div style="display:flex;align-items:center;gap:8px;padding:6px 0;border-bottom:1px solid var(--border-light)">
-            <span class="tag-badge ${tagClass(item.tag)}" data-tag="${item.tag}" style="font-size:.55rem">${esc(item.tag)}</span>
-            <span style="font-size:.82rem;flex:1">${esc(item.description)}</span>
-          </div>`;
+              <div class="tmpl-item">
+                <span class="tag-badge ${tagClass(item.tag)}" data-tag="${item.tag}" style="font-size:.55rem">${esc(item.tag)}</span>
+                <span class="tmpl-item-desc">${esc(item.description)}</span>
+              </div>`;
       });
+      html += `
+            </div>
+          </div>`;
     });
+
+    html += `
+        </div>
+      </div>`;
   });
 
   $content.innerHTML = html;
+
+  // Toggle phase expand/collapse
+  document.querySelectorAll('.tmpl-phase-header').forEach(header => {
+    header.addEventListener('click', () => {
+      const idx = header.dataset.phaseIdx;
+      const body = document.getElementById(`tmpl-phase-${idx}`);
+      const chevron = header.querySelector('.tmpl-chevron');
+      body.classList.toggle('expanded');
+      chevron.classList.toggle('rotated');
+    });
+  });
 }
 
 // ── Archived ─────────────────────────────────────────────────────────
@@ -836,7 +902,6 @@ function showReports() {
     <div class="coming-soon">
       <h2>Reports</h2>
       <p style="font-size:.9rem;margin-top:8px">PDF and Excel export coming soon.</p>
-      <div style="margin-top:24px;font-size:3rem">📊</div>
     </div>`;
 }
 
@@ -943,7 +1008,6 @@ function openNewProjectModal() {
       }
     });
     closeModal();
-    // Navigate to the new project or refresh
     if (currentTab === 'home') loadDashboard();
     else if (currentTab === 'projects') loadProjects();
   };
@@ -1017,7 +1081,6 @@ function triggerConfetti() {
 
 // ── Init ─────────────────────────────────────────────────────────────
 (async () => {
-  // Check if template exists, if not seed it
   try {
     await api('/template');
   } catch {
