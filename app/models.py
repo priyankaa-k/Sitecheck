@@ -6,7 +6,7 @@ import hashlib, secrets
 
 
 class User(Base):
-    __tablename__ = "users"
+    __tablename__ = "app_users"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
