@@ -2,6 +2,30 @@ from datetime import datetime, timezone
 from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Boolean, Date
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
+import hashlib, secrets
+
+
+class User(Base):
+    __tablename__ = "users"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str] = mapped_column(String(300), unique=True, nullable=False)
+    password_hash: Mapped[str] = mapped_column(String(300), nullable=False)
+    role: Mapped[str] = mapped_column(String(50), default="inspector")  # admin, inspector
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    @staticmethod
+    def hash_password(password: str) -> str:
+        salt = secrets.token_hex(16)
+        h = hashlib.sha256((salt + password).encode()).hexdigest()
+        return f"{salt}:{h}"
+
+    def verify_password(self, password: str) -> bool:
+        salt, h = self.password_hash.split(":")
+        return hashlib.sha256((salt + password).encode()).hexdigest() == h
 
 #create projects
 class Project(Base):
@@ -93,3 +117,42 @@ class ChecklistItem(Base):
     category_id: Mapped[int] = mapped_column(ForeignKey("categories.id"), nullable=False)
 
     category: Mapped["Category"] = relationship(back_populates="items")
+
+
+class PhaseInspection(Base):
+    __tablename__ = "phase_inspections"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    phase_id: Mapped[int] = mapped_column(ForeignKey("phases.id"), nullable=False)
+    started_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    ended_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), default=None)
+    duration_seconds: Mapped[int] = mapped_column(Integer, default=0)
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+    # Snapshot of phase state when inspection stopped
+    total_items: Mapped[int] = mapped_column(Integer, default=0)
+    confirmed_count: Mapped[int] = mapped_column(Integer, default=0)
+    flagged_count: Mapped[int] = mapped_column(Integer, default=0)
+    unchecked_count: Mapped[int] = mapped_column(Integer, default=0)
+    na_count: Mapped[int] = mapped_column(Integer, default=0)
+    inspector_name: Mapped[str | None] = mapped_column(String(200), default=None)
+
+    phase: Mapped["Phase"] = relationship()
+
+
+class InspectionEvent(Base):
+    __tablename__ = "inspection_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    project_id: Mapped[int] = mapped_column(ForeignKey("projects.id"), nullable=False)
+    title: Mapped[str] = mapped_column(String(300), nullable=False)
+    event_date: Mapped[str] = mapped_column(String(20), nullable=False)  # YYYY-MM-DD
+    event_time: Mapped[str | None] = mapped_column(String(10), default=None)  # HH:MM
+    note: Mapped[str | None] = mapped_column(Text, default=None)
+    notify: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    project: Mapped["Project"] = relationship()

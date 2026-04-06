@@ -2,6 +2,25 @@ from pydantic import BaseModel
 from datetime import datetime
 
 
+# ── Auth ─────────────────────────────────────────────────────────────
+
+class RegisterRequest(BaseModel):
+    name: str
+    email: str
+    password: str
+
+class LoginRequest(BaseModel):
+    email: str
+    password: str
+
+class UserOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    role: str
+    model_config = {"from_attributes": True}
+
+
 # ── Requests ──────────────────────────────────────────────────────────
 
 class ProjectCreate(BaseModel):
@@ -38,6 +57,49 @@ class CommentUpdate(BaseModel):
 
 class NoteCreate(BaseModel):
     content: str
+
+
+class ProjectUpdate(BaseModel):
+    name: str | None = None
+    client_name: str | None = None
+    site_address: str | None = None
+    start_date: str | None = None
+    supervisor: str | None = None
+
+
+class ItemUpdate(BaseModel):
+    description: str | None = None
+    tag: str | None = None
+
+
+class ItemMove(BaseModel):
+    target_category_id: int
+
+
+class InspectionStart(BaseModel):
+    pass
+
+
+class InspectionStop(BaseModel):
+    duration_seconds: int
+    note: str = ""
+
+
+class EventCreate(BaseModel):
+    project_id: int
+    title: str
+    event_date: str          # YYYY-MM-DD
+    event_time: str | None = None  # HH:MM
+    note: str = ""
+    notify: bool = False
+
+
+class EventUpdate(BaseModel):
+    title: str | None = None
+    event_date: str | None = None
+    event_time: str | None = None
+    note: str | None = None
+    notify: bool | None = None
 
 
 # ── Responses ─────────────────────────────────────────────────────────
@@ -118,6 +180,34 @@ class ProjectOut(BaseModel):
 class DashboardOut(BaseModel):
     total_flagged: int = 0
     active_projects: list[ProjectOut] = []
+
+
+class PhaseInspectionOut(BaseModel):
+    id: int
+    phase_id: int
+    started_at: datetime
+    ended_at: datetime | None
+    duration_seconds: int
+    note: str | None
+    total_items: int = 0
+    confirmed_count: int = 0
+    flagged_count: int = 0
+    unchecked_count: int = 0
+    na_count: int = 0
+    inspector_name: str | None = None
+    model_config = {"from_attributes": True}
+
+
+class InspectionEventOut(BaseModel):
+    id: int
+    project_id: int
+    title: str
+    event_date: str
+    event_time: str | None
+    note: str | None
+    notify: bool
+    created_at: datetime
+    model_config = {"from_attributes": True}
 
 
 class SearchResultOut(BaseModel):

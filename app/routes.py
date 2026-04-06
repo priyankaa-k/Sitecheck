@@ -1,19 +1,93 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from app.database import get_db
-from app.models import Project, Phase, Category, ChecklistItem, ProjectNote, VALID_STATUSES, VALID_TAGS
+from app.models import Project, Phase, Category, ChecklistItem, ProjectNote, PhaseInspection, InspectionEvent, User, VALID_STATUSES, VALID_TAGS
 from app.schemas import (
-    ProjectCreate, PhaseCreate, CategoryCreate, ItemCreate,
-    StatusUpdate, CommentUpdate, NoteCreate,
+    ProjectCreate, ProjectUpdate, PhaseCreate, CategoryCreate, ItemCreate,
+    StatusUpdate, CommentUpdate, NoteCreate, ItemUpdate, ItemMove,
+    InspectionStart, InspectionStop, EventCreate, EventUpdate,
+    RegisterRequest, LoginRequest, UserOut,
     ProjectOut, PhaseOut, CategoryOut, ItemOut, NoteOut,
+    PhaseInspectionOut, InspectionEventOut,
     DashboardOut, SearchResultOut,
 )
 from app.template_data import MASTER_TEMPLATE
 from datetime import datetime, timezone
+import secrets
 
 router = APIRouter(prefix="/api")
+
+# Simple in-memory session store (token -> user_id)
+_sessions: dict[str, int] = {}
+
+
+async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User | None:
+    token = request.cookies.get("session_token")
+    if not token or token not in _sessions:
+        return None
+    user = await db.get(User, _sessions[token])
+    return user
+
+
+async def require_user(request: Request, db: AsyncSession = Depends(get_db)) -> User:
+    user = await get_current_user(request, db)
+    if not user:
+        raise HTTPException(401, "Not authenticated")
+    return user
+
+
+# ── Auth ─────────────────────────────────────────────────────────────
+
+@router.post("/auth/register", response_model=UserOut, status_code=201)
+async def register(data: RegisterRequest, response: Response, db: AsyncSession = Depends(get_db)):
+    existing = await db.execute(select(User).where(User.email == data.email))
+    if existing.scalar_one_or_none():
+        raise HTTPException(400, "Email already registered")
+    user = User(name=data.name, email=data.email, password_hash=User.hash_password(data.password))
+    db.add(user)
+    await db.commit()
+    await db.refresh(user)
+    token = secrets.token_hex(32)
+    _sessions[token] = user.id
+    response.set_cookie("session_token", token, httponly=True, samesite="lax", max_age=30*86400)
+    return user
+
+
+@router.post("/auth/login", response_model=UserOut)
+async def login(data: LoginRequest, response: Response, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).where(User.email == data.email))
+    user = result.scalar_one_or_none()
+    if not user or not user.verify_password(data.password):
+        raise HTTPException(401, "Invalid email or password")
+    token = secrets.token_hex(32)
+    _sessions[token] = user.id
+    response.set_cookie("session_token", token, httponly=True, samesite="lax", max_age=30*86400)
+    return user
+
+
+@router.post("/auth/logout")
+async def logout(request: Request, response: Response):
+    token = request.cookies.get("session_token")
+    if token and token in _sessions:
+        del _sessions[token]
+    response.delete_cookie("session_token")
+    return {"message": "Logged out"}
+
+
+@router.get("/auth/me", response_model=UserOut | None)
+async def get_me(request: Request, db: AsyncSession = Depends(get_db)):
+    user = await get_current_user(request, db)
+    if not user:
+        return None
+    return user
+
+
+@router.get("/auth/users", response_model=list[UserOut])
+async def list_users(db: AsyncSession = Depends(get_db)):
+    result = await db.execute(select(User).order_by(User.name))
+    return result.scalars().all()
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -208,6 +282,18 @@ async def get_project(project_id: int, db: AsyncSession = Depends(get_db)):
     return _project_to_out(project, include_phases=True, include_notes=True)
 
 
+@router.patch("/projects/{project_id}", response_model=ProjectOut)
+async def update_project(project_id: int, data: ProjectUpdate, db: AsyncSession = Depends(get_db)):
+    project = await db.get(Project, project_id)
+    if not project:
+        raise HTTPException(404)
+    for field, value in data.model_dump(exclude_unset=True).items():
+        setattr(project, field, value)
+    await db.commit()
+    project = await _load_project(db, project_id)
+    return _project_to_out(project, include_phases=True, include_notes=True)
+
+
 @router.patch("/projects/{project_id}/archive", response_model=ProjectOut)
 async def archive_project(project_id: int, db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, project_id)
@@ -394,6 +480,26 @@ async def _sync_item_to_all(db: AsyncSession, source_project_id: int, phase_name
         await _add_item_to_project(db, project, phase_name, category_name, description, tag)
 
 
+async def _sync_item_edit_to_all(db: AsyncSession, source_project_id: int, phase_name: str, category_name: str, old_desc: str, new_desc: str, new_tag: str):
+    """Sync an item description/tag edit to template and all other projects."""
+    result = await db.execute(
+        select(Project)
+        .where(Project.id != source_project_id, Project.is_archived == False)
+        .options(*_project_eager_options())
+    )
+    projects = result.scalars().unique().all()
+    for project in projects:
+        for phase in project.phases:
+            if phase.name == phase_name:
+                for cat in phase.categories:
+                    if cat.name == category_name:
+                        for item in cat.items:
+                            if item.description == old_desc:
+                                item.description = new_desc
+                                item.tag = new_tag
+                                item.updated_at = datetime.now(timezone.utc)
+
+
 @router.patch("/items/{item_id}/status", response_model=ItemOut)
 async def update_status(item_id: int, data: StatusUpdate, db: AsyncSession = Depends(get_db)):
     if data.status not in VALID_STATUSES:
@@ -437,6 +543,61 @@ async def update_comment(item_id: int, data: CommentUpdate, db: AsyncSession = D
     if not item:
         raise HTTPException(404)
     item.comment = data.comment if data.comment else None
+    item.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    await db.refresh(item)
+    return ItemOut(
+        id=item.id, description=item.description, status=item.status,
+        tag=item.tag, comment=item.comment, is_custom=item.is_custom,
+        sort_order=item.sort_order, updated_at=item.updated_at,
+        category_id=item.category_id,
+    )
+
+
+@router.patch("/items/{item_id}", response_model=ItemOut)
+async def update_item(item_id: int, data: ItemUpdate, db: AsyncSession = Depends(get_db)):
+    item = await db.get(ChecklistItem, item_id)
+    if not item:
+        raise HTTPException(404)
+    if data.tag and data.tag not in VALID_TAGS:
+        raise HTTPException(400, f"Invalid tag. Must be one of: {VALID_TAGS}")
+    old_desc = item.description
+    if data.description is not None:
+        item.description = data.description
+    if data.tag is not None:
+        item.tag = data.tag
+    item.updated_at = datetime.now(timezone.utc)
+
+    # Sync edit to template and other projects
+    category = await db.get(Category, item.category_id)
+    if category:
+        phase = await db.get(Phase, category.phase_id)
+        if phase:
+            project = await db.get(Project, phase.project_id)
+            if project and not project.is_template:
+                await _sync_item_edit_to_all(db, project.id, phase.name, category.name, old_desc, item.description, item.tag)
+
+    await db.commit()
+    await db.refresh(item)
+    return ItemOut(
+        id=item.id, description=item.description, status=item.status,
+        tag=item.tag, comment=item.comment, is_custom=item.is_custom,
+        sort_order=item.sort_order, updated_at=item.updated_at,
+        category_id=item.category_id,
+    )
+
+
+@router.patch("/items/{item_id}/move", response_model=ItemOut)
+async def move_item(item_id: int, data: ItemMove, db: AsyncSession = Depends(get_db)):
+    item = await db.get(ChecklistItem, item_id)
+    if not item:
+        raise HTTPException(404)
+    target_cat = await db.get(Category, data.target_category_id)
+    if not target_cat:
+        raise HTTPException(404, "Target category not found")
+    item.category_id = data.target_category_id
+    count = await db.scalar(select(func.count()).where(ChecklistItem.category_id == data.target_category_id))
+    item.sort_order = count
     item.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(item)
@@ -577,3 +738,117 @@ async def seed_template(db: AsyncSession = Depends(get_db)):
 
     await db.commit()
     return {"message": "Master template seeded", "phases": len(MASTER_TEMPLATE)}
+
+
+# ── Phase Inspection Timer ───────────────────────────────────────────
+
+@router.post("/phases/{phase_id}/timer/start", response_model=PhaseInspectionOut, status_code=201)
+async def start_inspection_timer(phase_id: int, db: AsyncSession = Depends(get_db)):
+    phase = await db.get(Phase, phase_id)
+    if not phase:
+        raise HTTPException(404)
+    inspection = PhaseInspection(phase_id=phase_id)
+    db.add(inspection)
+    await db.commit()
+    await db.refresh(inspection)
+    return inspection
+
+
+@router.patch("/inspections/{inspection_id}/stop", response_model=PhaseInspectionOut)
+async def stop_inspection_timer(inspection_id: int, data: InspectionStop, db: AsyncSession = Depends(get_db)):
+    inspection = await db.get(PhaseInspection, inspection_id)
+    if not inspection:
+        raise HTTPException(404)
+    inspection.ended_at = datetime.now(timezone.utc)
+    inspection.duration_seconds = data.duration_seconds
+    if data.note:
+        inspection.note = data.note
+
+    # Capture phase snapshot
+    result = await db.execute(
+        select(Phase).where(Phase.id == inspection.phase_id).options(*_phase_eager_options())
+    )
+    phase = result.scalar_one_or_none()
+    if phase:
+        total, counts, _, _ = _phase_stats(phase)
+        inspection.total_items = total
+        inspection.confirmed_count = counts["confirmed"]
+        inspection.flagged_count = counts["flagged"]
+        inspection.unchecked_count = counts["unchecked"]
+        inspection.na_count = counts["na"]
+
+    await db.commit()
+    await db.refresh(inspection)
+    return inspection
+
+
+@router.get("/phases/{phase_id}/timer/history", response_model=list[PhaseInspectionOut])
+async def get_inspection_history(phase_id: int, db: AsyncSession = Depends(get_db)):
+    result = await db.execute(
+        select(PhaseInspection)
+        .where(PhaseInspection.phase_id == phase_id)
+        .order_by(PhaseInspection.started_at.desc())
+        .limit(20)
+    )
+    return result.scalars().all()
+
+
+# ── Calendar Events ──────────────────────────────────────────────────
+
+@router.post("/events", response_model=InspectionEventOut, status_code=201)
+async def create_event(data: EventCreate, db: AsyncSession = Depends(get_db)):
+    project = await db.get(Project, data.project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+    event = InspectionEvent(
+        project_id=data.project_id, title=data.title,
+        event_date=data.event_date, event_time=data.event_time,
+        note=data.note, notify=data.notify,
+    )
+    db.add(event)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+@router.get("/events", response_model=list[InspectionEventOut])
+async def list_events(
+    month: str | None = Query(None, description="YYYY-MM"),
+    db: AsyncSession = Depends(get_db),
+):
+    query = select(InspectionEvent).order_by(InspectionEvent.event_date)
+    if month:
+        query = query.where(InspectionEvent.event_date.like(f"{month}%"))
+    result = await db.execute(query)
+    return result.scalars().all()
+
+
+@router.get("/events/{event_id}", response_model=InspectionEventOut)
+async def get_event(event_id: int, db: AsyncSession = Depends(get_db)):
+    event = await db.get(InspectionEvent, event_id)
+    if not event:
+        raise HTTPException(404)
+    return event
+
+
+@router.patch("/events/{event_id}", response_model=InspectionEventOut)
+async def update_event(event_id: int, data: EventUpdate, db: AsyncSession = Depends(get_db)):
+    event = await db.get(InspectionEvent, event_id)
+    if not event:
+        raise HTTPException(404)
+    for field in ["title", "event_date", "event_time", "note", "notify"]:
+        val = getattr(data, field, None)
+        if val is not None:
+            setattr(event, field, val)
+    await db.commit()
+    await db.refresh(event)
+    return event
+
+
+@router.delete("/events/{event_id}", status_code=204)
+async def delete_event(event_id: int, db: AsyncSession = Depends(get_db)):
+    event = await db.get(InspectionEvent, event_id)
+    if not event:
+        raise HTTPException(404)
+    await db.delete(event)
+    await db.commit()
