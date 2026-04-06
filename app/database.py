@@ -29,13 +29,16 @@ async def get_db():
 
 
 async def init_db():
+    # Clean up ghost types from failed deploys (Postgres only)
+    if not engine.url.drivername.startswith("sqlite"):
+        from sqlalchemy import text
+        for ghost_type in ("users", "app_users"):
+            try:
+                async with engine.begin() as cleanup_conn:
+                    await cleanup_conn.execute(text(f"DROP TYPE IF EXISTS {ghost_type} CASCADE"))
+            except Exception:
+                pass  # ignore — type may not exist or may be attached to a real table
+
+    # Now create tables on a fresh connection
     async with engine.begin() as conn:
-        # Drop leftover Postgres types from failed CREATE TABLE attempts
-        if not engine.url.drivername.startswith("sqlite"):
-            from sqlalchemy import text
-            for ghost_type in ("users", "app_users"):
-                try:
-                    await conn.execute(text(f"DROP TYPE IF EXISTS {ghost_type} CASCADE"))
-                except Exception:
-                    pass
         await conn.run_sync(Base.metadata.create_all)
