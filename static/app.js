@@ -1613,7 +1613,7 @@ function showAuthScreen() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email: $('#a-email').value.trim(), password: $('#a-password').value }),
       });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Login failed'); }
+      if (!res.ok) { let msg = 'Login failed'; try { const d = await res.json(); msg = d.detail || msg; } catch(_){} throw new Error(msg); }
       currentUser = await res.json();
       startApp();
     } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
@@ -1629,7 +1629,7 @@ function showAuthScreen() {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: $('#a-name').value.trim(), email: $('#a-reg-email').value.trim(), password: pw, role: $('#a-role').value }),
       });
-      if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Registration failed'); }
+      if (!res.ok) { let msg = 'Registration failed'; try { const d = await res.json(); msg = d.detail || msg; } catch(_){} throw new Error(msg); }
       currentUser = await res.json();
       startApp();
     } catch (e) { errEl.textContent = e.message; errEl.style.display = 'block'; }
