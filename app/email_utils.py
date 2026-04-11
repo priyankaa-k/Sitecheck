@@ -1,4 +1,5 @@
 import smtplib
+import socket
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import settings
@@ -6,6 +7,14 @@ import asyncio
 from concurrent.futures import ThreadPoolExecutor
 
 _executor = ThreadPoolExecutor(max_workers=2)
+
+
+def _resolve_ipv4(host, port):
+    """Resolve hostname to IPv4 address to avoid IPv6 issues on Render."""
+    addrs = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    if addrs:
+        return addrs[0][4][0]  # First IPv4 address
+    return host
 
 
 def _send_email_sync(to_emails: list[str], subject: str, html_body: str):
@@ -21,7 +30,9 @@ def _send_email_sync(to_emails: list[str], subject: str, html_body: str):
     msg.attach(MIMEText(html_body, "html"))
 
     try:
-        with smtplib.SMTP(settings.smtp_host, settings.smtp_port) as server:
+        # Resolve to IPv4 to avoid "Network is unreachable" on hosts without IPv6
+        host = _resolve_ipv4(settings.smtp_host, settings.smtp_port)
+        with smtplib.SMTP(host, settings.smtp_port, timeout=30) as server:
             server.starttls()
             server.login(settings.smtp_user, settings.smtp_password)
             server.sendmail(msg["From"], to_emails, msg.as_string())

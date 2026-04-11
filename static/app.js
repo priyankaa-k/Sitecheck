@@ -1717,17 +1717,48 @@ async function initGoogleSignIn() {
 
 async function handleGoogleCredential(response) {
   try {
-    const res = await fetch(`${API}/auth/google`, {
+    // Try login (existing user gets logged in, new user gets 449)
+    const loginRes = await fetch(`${API}/auth/google`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ credential: response.credential }),
     });
-    if (!res.ok) {
-      const d = await res.json();
-      throw new Error(d.detail || 'Google sign-in failed');
+    if (loginRes.ok) {
+      currentUser = await loginRes.json();
+      startApp();
+      return;
     }
-    currentUser = await res.json();
-    startApp();
+    if (loginRes.status !== 449) {
+      let msg = 'Google sign-in failed'; try { const d = await loginRes.json(); msg = d.detail || msg; } catch(_){} throw new Error(msg);
+    }
+
+    // New user — show role picker modal
+    const cred = response.credential;
+    const modal = $('#modal-body');
+    modal.innerHTML = `
+      <h2>Welcome! Choose your role</h2>
+      <div class="form-group"><label class="form-label">Role</label>
+        <select class="form-input" id="g-role">
+          <option value="engineer">Engineer</option>
+          <option value="project_manager">Project Manager</option>
+          <option value="contractor">Contractor</option>
+          <option value="admin">Admin</option>
+        </select>
+      </div>
+      <div class="modal-actions"><button class="btn btn-primary" id="g-role-submit">Continue</button></div>`;
+    $('#modal-overlay').classList.add('open');
+    $('#g-role-submit').onclick = async () => {
+      const role = $('#g-role').value;
+      const res = await fetch(`${API}/auth/google`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ credential: cred, role }),
+      });
+      if (!res.ok) { let msg = 'Google sign-in failed'; try { const d = await res.json(); msg = d.detail || msg; } catch(_){} throw new Error(msg); }
+      currentUser = await res.json();
+      closeModal();
+      startApp();
+    };
   } catch (e) {
     const errEl = $('#auth-error');
     if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }

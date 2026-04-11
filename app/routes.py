@@ -156,13 +156,21 @@ async def google_auth(request: Request, response: Response, db: AsyncSession = D
         raise HTTPException(400, "No email in Google token")
 
     # Find or create user
+    role = body.get("role", "engineer")
+    valid_roles = ("admin", "engineer", "project_manager", "contractor")
+    if role not in valid_roles:
+        role = "engineer"
+
     result = await db.execute(select(User).where(User.email == email))
     user = result.scalar_one_or_none()
     if not user:
+        # If no role provided, tell frontend to ask for one
+        if "role" not in body:
+            raise HTTPException(449, "new_user")
         user = User(
             name=name, email=email,
-            password_hash=User.hash_password(secrets.token_hex(16)),  # random password for Google users
-            role="engineer",
+            password_hash=User.hash_password(secrets.token_hex(16)),
+            role=role,
         )
         db.add(user)
         await db.commit()
