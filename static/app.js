@@ -471,21 +471,30 @@ async function loadProjectDetail(projectId) {
 }
 
 // ── Edit Project Modal ───────────────────────────────────────────────
-function openEditProjectModal(project) {
+async function openEditProjectModal(project) {
+  let supervisors = [];
+  try { supervisors = await api('/supervisors'); } catch(e) {}
+
   $('#modal-body').innerHTML = `
     <h2>Edit Project</h2>
     <div class="form-group"><label class="form-label">Project Name</label><input class="form-input" id="m-name" value="${esc(project.name)}"></div>
     <div class="form-group"><label class="form-label">Client Name</label><input class="form-input" id="m-client" value="${esc(project.client_name)}"></div>
+    <div class="form-group"><label class="form-label">Client Email</label><input class="form-input" id="m-client-email" type="email" value="${esc(project.client_email || '')}"></div>
     <div class="form-group"><label class="form-label">Site Address</label><input class="form-input" id="m-address" value="${esc(project.site_address)}"></div>
     <div class="form-group"><label class="form-label">Start Date</label><input class="form-input" id="m-date" type="date" value="${project.start_date || ''}"></div>
-    <div class="form-group"><label class="form-label">Supervisor</label><input class="form-input" id="m-supervisor" value="${esc(project.supervisor)}"></div>
+    <div class="form-group"><label class="form-label">Supervisor</label>
+      <select class="form-input" id="m-supervisor">
+        <option value="">Select supervisor...</option>
+        ${supervisors.map(s => `<option value="${esc(s.name)}" ${s.name === project.supervisor ? 'selected' : ''}>${esc(s.name)} (${s.role === 'admin' ? 'Admin' : 'PM'})</option>`).join('')}
+      </select>
+    </div>
     <div class="modal-actions"><button class="btn btn-ghost" id="m-cancel">Cancel</button><button class="btn btn-primary" id="m-submit">Save</button></div>`;
   $modalOverlay.classList.add('open');
   $('#m-cancel').onclick = closeModal;
   $('#m-submit').onclick = async () => {
     await api(`/projects/${project.id}`, {
       method: 'PATCH',
-      body: { name: $('#m-name').value.trim(), client_name: $('#m-client').value.trim(), site_address: $('#m-address').value.trim(), start_date: $('#m-date').value || null, supervisor: $('#m-supervisor').value.trim() }
+      body: { name: $('#m-name').value.trim(), client_name: $('#m-client').value.trim(), client_email: $('#m-client-email').value.trim(), site_address: $('#m-address').value.trim(), start_date: $('#m-date').value || null, supervisor: $('#m-supervisor').value }
     });
     closeModal();
     loadProjectDetail(project.id);
@@ -535,6 +544,7 @@ async function loadPhaseDetail(phaseId) {
           : `<button class="btn btn-primary btn-sm" id="timer-start">Start Inspection</button>`
         }
         <button class="btn btn-ghost btn-sm" id="timer-history-btn">History</button>
+        <button class="btn btn-ghost btn-sm" id="send-report-btn" title="Email phase report">📧 Report</button>
       </div>
     </div>`;
 
@@ -684,6 +694,23 @@ async function loadPhaseDetail(phaseId) {
 
   if (historyBtn) {
     historyBtn.onclick = () => openTimerHistoryModal(phaseId);
+  }
+
+  const reportBtn = $('#send-report-btn');
+  if (reportBtn) {
+    reportBtn.onclick = async () => {
+      reportBtn.disabled = true;
+      reportBtn.textContent = 'Sending...';
+      try {
+        const resp = await api(`/phases/${phaseId}/send-report`, { method: 'POST' });
+        reportBtn.textContent = '✓ Sent!';
+        setTimeout(() => { reportBtn.textContent = '📧 Report'; reportBtn.disabled = false; }, 3000);
+      } catch (e) {
+        reportBtn.textContent = '📧 Report';
+        reportBtn.disabled = false;
+        alert(e.message || 'Failed to send report');
+      }
+    };
   }
 
   // Resume ticking if timer is running for this phase
@@ -1088,14 +1115,24 @@ window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () 
 });
 
 // ── Modals ───────────────────────────────────────────────────────────
-function openNewProjectModal() {
+async function openNewProjectModal() {
+  // Fetch supervisors for dropdown
+  let supervisors = [];
+  try { supervisors = await api('/supervisors'); } catch(e) {}
+
   $('#modal-body').innerHTML = `
     <h2>New Project</h2>
     <div class="form-group"><label class="form-label">Project Name *</label><input class="form-input" id="m-name" placeholder="e.g. Riverside Residence" required></div>
     <div class="form-group"><label class="form-label">Client Name</label><input class="form-input" id="m-client" placeholder="e.g. John Smith"></div>
+    <div class="form-group"><label class="form-label">Client Email</label><input class="form-input" id="m-client-email" type="email" placeholder="e.g. john@example.com"></div>
     <div class="form-group"><label class="form-label">Site Address</label><input class="form-input" id="m-address" placeholder="e.g. 123 Maple St, Toronto"></div>
     <div class="form-group"><label class="form-label">Start Date</label><input class="form-input" id="m-date" type="date"></div>
-    <div class="form-group"><label class="form-label">Supervisor</label><input class="form-input" id="m-supervisor" placeholder="e.g. Mike Johnson"></div>
+    <div class="form-group"><label class="form-label">Supervisor</label>
+      <select class="form-input" id="m-supervisor">
+        <option value="">Select supervisor...</option>
+        ${supervisors.map(s => `<option value="${esc(s.name)}">${esc(s.name)} (${s.role === 'admin' ? 'Admin' : 'PM'})</option>`).join('')}
+      </select>
+    </div>
     <div class="modal-actions"><button class="btn btn-ghost" id="m-cancel">Cancel</button><button class="btn btn-primary" id="m-submit">Create Project</button></div>`;
   $modalOverlay.classList.add('open');
   $('#m-cancel').onclick = closeModal;
@@ -1103,7 +1140,7 @@ function openNewProjectModal() {
     const name = $('#m-name').value.trim();
     if (!name) { $('#m-name').focus(); return; }
     $('#m-submit').textContent = 'Creating...'; $('#m-submit').disabled = true;
-    await api('/projects', { method: 'POST', body: { name, client_name: $('#m-client').value.trim(), site_address: $('#m-address').value.trim(), start_date: $('#m-date').value || null, supervisor: $('#m-supervisor').value.trim() } });
+    await api('/projects', { method: 'POST', body: { name, client_name: $('#m-client').value.trim(), client_email: $('#m-client-email').value.trim(), site_address: $('#m-address').value.trim(), start_date: $('#m-date').value || null, supervisor: $('#m-supervisor').value } });
     closeModal();
     if (currentTab === 'home') loadDashboard(); else if (currentTab === 'projects') loadProjects();
   };

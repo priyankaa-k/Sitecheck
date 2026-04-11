@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from app.database import get_db
-from app.models import Project, Phase, Category, ChecklistItem, ProjectNote, PhaseInspection, InspectionEvent, User, UserSession, VALID_STATUSES, VALID_TAGS
+from app.models import Project, Phase, Category, ChecklistItem, ProjectNote, PhaseInspection, InspectionEvent, User, UserSession, Client, VALID_STATUSES, VALID_TAGS
 from app.schemas import (
     ProjectCreate, ProjectUpdate, PhaseCreate, CategoryCreate, ItemCreate,
     StatusUpdate, CommentUpdate, NoteCreate, ItemUpdate, ItemMove,
@@ -177,6 +177,26 @@ async def google_auth(request: Request, response: Response, db: AsyncSession = D
     return user
 
 
+# ── Supervisors & Clients ────────────────────────────────────────────
+
+@router.get("/supervisors")
+async def list_supervisors(db: AsyncSession = Depends(get_db)):
+    """Return admin and project_manager users for supervisor dropdown."""
+    result = await db.execute(
+        select(User).where(User.role.in_(["admin", "project_manager"]))
+    )
+    users = result.scalars().all()
+    return [{"id": u.id, "name": u.name, "role": u.role} for u in users]
+
+
+@router.get("/clients")
+async def list_clients(db: AsyncSession = Depends(get_db)):
+    """Return all clients for autocomplete."""
+    result = await db.execute(select(Client).order_by(Client.name))
+    clients = result.scalars().all()
+    return [{"id": c.id, "name": c.name, "email": c.email, "company": c.company, "phone": c.phone} for c in clients]
+
+
 # ── Helpers ───────────────────────────────────────────────────────────
 
 def _phase_stats(phase):
@@ -218,6 +238,7 @@ def _project_to_out(project, include_phases=False, include_notes=False):
             phases.append(_phase_to_out(ph, include_categories=True))
     return ProjectOut(
         id=project.id, name=project.name, client_name=project.client_name,
+        client_email=project.client_email or "",
         site_address=project.site_address, start_date=project.start_date,
         supervisor=project.supervisor, is_template=project.is_template,
         is_archived=project.is_archived, created_at=project.created_at,
@@ -280,20 +301,58 @@ async def _check_phase_complete_and_email(category_id: int, request: Request, db
         user = await get_current_user(request, db)
         inspector = user.name if user else ""
 
-        # Find admin + project manager users
-        notify_result = await db.execute(
-            select(User).where(User.role.in_(["admin", "project_manager"]))
-        )
-        notify_users = notify_result.scalars().all()
-        if not notify_users:
+        # Send to project supervisor + client only
+        emails = []
+        if project.supervisor:
+            sup_result = await db.execute(select(User).where(User.name == project.supervisor))
+            sup = sup_result.scalar_one_or_none()
+            if sup:
+                emails.append(sup.email)
+        if project.client_email:
+            emails.append(project.client_email)
+        if not emails:
             return
 
-        admin_emails = [u.email for u in notify_users]
         subject = f"Phase Complete: {phase.name} - {project.name}"
         html = build_phase_report_html(project.name, phase.name, phase.categories, inspector)
-        await send_email(admin_emails, subject, html)
+        await send_email(emails, subject, html)
     except Exception as e:
         print(f"[EMAIL CHECK] Error: {e}")
+
+
+@router.post("/phases/{phase_id}/send-report")
+async def send_phase_report(phase_id: int, request: Request, db: AsyncSession = Depends(get_db)):
+    """Manually send a phase report email to admins and project managers."""
+    user = await require_user(request, db)
+    phase_result = await db.execute(
+        select(Phase).where(Phase.id == phase_id).options(
+            selectinload(Phase.categories).selectinload(Category.items)
+        )
+    )
+    phase = phase_result.scalar_one_or_none()
+    if not phase:
+        raise HTTPException(404, "Phase not found")
+
+    project = await db.get(Project, phase.project_id)
+    if not project:
+        raise HTTPException(404, "Project not found")
+
+    # Send to project supervisor + client only
+    emails = []
+    if project.supervisor:
+        sup_result = await db.execute(select(User).where(User.name == project.supervisor))
+        sup = sup_result.scalar_one_or_none()
+        if sup:
+            emails.append(sup.email)
+    if project.client_email:
+        emails.append(project.client_email)
+    if not emails:
+        raise HTTPException(400, "No supervisor or client email set for this project")
+
+    subject = f"Phase Report: {phase.name} - {project.name}"
+    html = build_phase_report_html(project.name, phase.name, phase.categories, user.name)
+    await send_email(emails, subject, html)
+    return {"sent_to": emails}
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────
@@ -350,8 +409,24 @@ async def list_projects(
 
 @router.post("/projects", response_model=ProjectOut, status_code=201)
 async def create_project(data: ProjectCreate, db: AsyncSession = Depends(get_db)):
+    # Create or find client if client_name provided
+    client_id = None
+    if data.client_name:
+        existing = await db.execute(select(Client).where(Client.name == data.client_name))
+        client = existing.scalar_one_or_none()
+        if client:
+            if data.client_email:
+                client.email = data.client_email
+            client_id = client.id
+        else:
+            client = Client(name=data.client_name, email=data.client_email)
+            db.add(client)
+            await db.flush()
+            client_id = client.id
+
     project = Project(
         name=data.name, client_name=data.client_name,
+        client_email=data.client_email, client_id=client_id,
         site_address=data.site_address, start_date=data.start_date,
         supervisor=data.supervisor,
     )
@@ -656,6 +731,7 @@ async def update_status(item_id: int, data: StatusUpdate, request: Request, db: 
 async def bulk_update_status(
     item_ids: list[int] = Query(...),
     status: str = Query(...),
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
     if status not in VALID_STATUSES:
@@ -663,10 +739,18 @@ async def bulk_update_status(
     result = await db.execute(select(ChecklistItem).where(ChecklistItem.id.in_(item_ids)))
     items = result.scalars().all()
     now = datetime.now(timezone.utc)
+    category_ids = set()
     for item in items:
         item.status = status
         item.updated_at = now
+        category_ids.add(item.category_id)
     await db.commit()
+
+    # Check if any phase became complete after bulk update
+    if status == "confirmed" and request:
+        for cat_id in category_ids:
+            await _check_phase_complete_and_email(cat_id, request, db)
+
     return {"updated": len(items)}
 
 

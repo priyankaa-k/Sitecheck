@@ -108,6 +108,15 @@ body {
 .logo-section {
   padding: 0 8px 0;
   margin-bottom: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.logo-icon {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
 }
 
 .logo-wordmark {

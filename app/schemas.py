@@ -27,6 +27,7 @@ class UserOut(BaseModel):
 class ProjectCreate(BaseModel):
     name: str
     client_name: str = ""
+    client_email: str = ""
     site_address: str = ""
     start_date: str | None = None
     supervisor: str = ""
@@ -63,6 +64,7 @@ class NoteCreate(BaseModel):
 class ProjectUpdate(BaseModel):
     name: str | None = None
     client_name: str | None = None
+    client_email: str | None = None
     site_address: str | None = None
     start_date: str | None = None
     supervisor: str | None = None
@@ -153,10 +155,20 @@ class NoteOut(BaseModel):
     model_config = {"from_attributes": True}
 
 
+class ClientOut(BaseModel):
+    id: int
+    name: str
+    email: str
+    company: str
+    phone: str
+    model_config = {"from_attributes": True}
+
+
 class ProjectOut(BaseModel):
     id: int
     name: str
     client_name: str
+    client_email: str = ""
     site_address: str
     start_date: str | None
     supervisor: str

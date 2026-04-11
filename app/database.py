@@ -56,3 +56,17 @@ async def init_db():
     # Create tables (skips already-existing ones)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
+
+    # Add new columns to existing tables (Postgres only, ALTER TABLE is idempotent with IF NOT EXISTS-style checks)
+    if not engine.url.drivername.startswith("sqlite"):
+        from sqlalchemy import text
+        migrations = [
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_email VARCHAR(300) DEFAULT ''",
+            "ALTER TABLE projects ADD COLUMN IF NOT EXISTS client_id INTEGER REFERENCES clients(id) ON DELETE SET NULL",
+        ]
+        for sql in migrations:
+            try:
+                async with engine.begin() as c:
+                    await c.execute(text(sql))
+            except Exception:
+                pass

@@ -42,13 +42,29 @@ class UserSession(Base):
     user: Mapped["User"] = relationship()
 
 
-#create projects
+class Client(Base):
+    __tablename__ = "clients"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    name: Mapped[str] = mapped_column(String(200), nullable=False)
+    email: Mapped[str] = mapped_column(String(300), default="")
+    company: Mapped[str] = mapped_column(String(300), default="")
+    phone: Mapped[str] = mapped_column(String(50), default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+
+    projects: Mapped[list["Project"]] = relationship(back_populates="client")
+
+
 class Project(Base):
     __tablename__ = "projects"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True)
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     client_name: Mapped[str] = mapped_column(String(200), default="")
+    client_email: Mapped[str] = mapped_column(String(300), default="")
+    client_id: Mapped[int | None] = mapped_column(ForeignKey("clients.id", ondelete="SET NULL"), default=None)
     site_address: Mapped[str] = mapped_column(String(400), default="")
     start_date: Mapped[str | None] = mapped_column(String(20), default=None)
     supervisor: Mapped[str] = mapped_column(String(200), default="")
@@ -58,6 +74,7 @@ class Project(Base):
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
 
+    client: Mapped["Client | None"] = relationship(back_populates="projects")
     phases: Mapped[list["Phase"]] = relationship(
         back_populates="project", cascade="all, delete-orphan",
         order_by="Phase.sort_order", lazy="selectin",
