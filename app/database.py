@@ -29,31 +29,30 @@ async def get_db():
 
 
 async def init_db():
-    # Clean up ghost types/sequences/tables from failed deploys (Postgres only)
+    # Clean up ghost types and broken tables from failed deploys (Postgres only)
     if not engine.url.drivername.startswith("sqlite"):
         from sqlalchemy import text
-        # Drop ghost tables that may be in a broken state
-        for ghost_table in ("user_sessions",):
-            try:
-                async with engine.begin() as c:
-                    await c.execute(text(f"DROP TABLE IF EXISTS {ghost_table} CASCADE"))
-            except Exception:
-                pass
         # Ghost composite types left by failed CREATE TABLE
-        for ghost_type in ("users", "app_users", "user_sessions"):
+        for ghost_type in ("users", "app_users"):
             try:
                 async with engine.begin() as c:
                     await c.execute(text(f"DROP TYPE IF EXISTS {ghost_type} CASCADE"))
             except Exception:
                 pass
-        # Ghost sequences left by failed CREATE TABLE with SERIAL columns
-        for ghost_seq in ("user_sessions_id_seq",):
-            try:
-                async with engine.begin() as c:
-                    await c.execute(text(f"DROP SEQUENCE IF EXISTS {ghost_seq} CASCADE"))
-            except Exception:
-                pass
+        # Fix user_sessions if its id column lost its auto-increment sequence
+        try:
+            async with engine.begin() as c:
+                row = await c.execute(text(
+                    "SELECT column_default FROM information_schema.columns "
+                    "WHERE table_name='user_sessions' AND column_name='id'"
+                ))
+                result = row.scalar_one_or_none()
+                if result is None:
+                    # Table exists but id has no default → broken, recreate it
+                    await c.execute(text("DROP TABLE IF EXISTS user_sessions CASCADE"))
+        except Exception:
+            pass
 
-    # Now create tables on a fresh connection
+    # Create tables (skips already-existing ones)
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
