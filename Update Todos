@@ -1,0 +1,85 @@
+Update Todos
+
+Fix session persistence - store sessions in DB, survive restarts, 24hr expiry
+
+Fix login page mobile compatibility
+
+Fix desktop notifications not working
+
+Add info button showing gesture instructions on categories page
+
+Click opens phases/categories, long press (mobile) / right-click (desktop) shows options
+
+Add clear notifications button
+
+Prevent creating events with past timestamps
+
+Improve inspection history - show username, clickable status drill-down
+
+Add role selection (admin/engineer) during registration
+
+Add Settings page - dark/light/system theme mode
+
+Show all users info only to admin role
+
+Google OAuth sign-in integration
+
+Auto email report when all items approved in a phase
+
+Discuss AWS free tier deployment and iOS/Android app options
+Here's the plan. I've organized your 14 pending tasks by priority:
+
+Critical UX Fixes (first):
+
+Session persistence - stop logout on refresh, 24hr expiry
+Login page mobile fix
+Desktop notifications fix
+UI Improvements:
+4. Info button for gesture instructions
+5. Click-to-open + long press/right-click for options
+6. Clear notifications
+7. Past event timestamp validation
+
+Feature Enhancements:
+8. Inspection history drill-down
+9. Role selection (admin/engineer)
+10. Settings page with dark/light theme
+11. Admin-only user list
+
+Advanced (need external services):
+12. Google OAuth
+13. Auto email reports
+14. AWS & mobile app discussion
+
+Let me start with Task 1: Fix session persistence. Currently sessions are stored in-memory, so every server restart (including page refresh triggering a redeploy) loses all sessions. I'll move sessions to the database with 24-hour expiry.
+
+Update Todos
+
+Fix session persistence - store sessions in DB, survive restarts, 24hr expiry
+
+Fix login page mobile compatibility
+
+Fix desktop notifications not working
+
+Add info button showing gesture instructions on categories page
+
+Click opens phases/categories, long press (mobile) / right-click (desktop) shows options
+
+Add clear notifications button
+
+Prevent creating events with past timestamps
+
+Improve inspection history - show username, clickable status drill-down
+
+Add role selection (admin/engineer) during registration
+
+Add Settings page - dark/light/system theme mode
+
+Show all users info only to admin role
+
+Google OAuth sign-in integration
+
+Auto email report when all items approved in a phase
+
+Discuss AWS free tier deployment and iOS/Android app options
+

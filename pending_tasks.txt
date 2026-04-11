@@ -1,0 +1,26 @@
+i need to create i button to move tap approve stuff on categories page
+
+notification is not working both on deployed and local, working on mobile
+
+inspection history - should show user name, on clicking each status it should show items. exmple 4 flagges if i click on that it should list what all flagged.
+
+create sign in google account Auth, create role while creating users(admin or engineer)
+
+add settings to the more and put dark or white or system default mode, show all users info to just admin role users.
+
+login page not compatible to mobile
+
+should not logout for every refresh, can logout after 24 hours
+
+clear notifications 
+
+donot allow to create event on past timestamp can edit previous event but timestamp should always greater than current()
+
+long press in mobile/right click shows all options. click should open phases,categories on all device
+
+if all items approved which are not n/a in all categories in a phase project manager(role should be added ) and admin whould recieve report email automatically
+
+Discuss about deploying and hosting this application on AWS free tier for smaller bussiness
+
+dicuss about creating ios and andriod application
+

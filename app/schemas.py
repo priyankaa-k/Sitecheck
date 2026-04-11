@@ -8,6 +8,7 @@ class RegisterRequest(BaseModel):
     name: str
     email: str
     password: str
+    role: str = "engineer"  # admin, engineer, project_manager, contractor
 
 class LoginRequest(BaseModel):
     email: str
@@ -195,6 +196,7 @@ class PhaseInspectionOut(BaseModel):
     unchecked_count: int = 0
     na_count: int = 0
     inspector_name: str | None = None
+    items_snapshot: str | None = None
     model_config = {"from_attributes": True}
 
 

@@ -462,9 +462,9 @@ async function loadProjectDetail(projectId) {
     };
   }
 
-  // Phase cards: double-click to open phase detail
+  // Phase cards: click to open phase detail
   $content.querySelectorAll('.phase-card').forEach(el => {
-    el.addEventListener('dblclick', () => {
+    el.addEventListener('click', () => {
       navigateTo('phase-detail', { id: parseInt(el.dataset.id), name: el.dataset.name });
     });
   });
@@ -553,7 +553,12 @@ async function loadPhaseDetail(phaseId) {
       </div>
     </div>`;
 
-  html += `<div class="item-hint">Tap = Flag &middot; Double-tap = Approve &middot; Swipe left = N/A &middot; Swipe right = Undo</div>`;
+  html += `<div class="item-hint">
+    <button class="info-btn" id="gesture-info-btn" title="Gesture guide">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="8" r="7"/><path d="M8 11V8M8 5.5v0"/></svg>
+    </button>
+    <span>Tap = Flag &middot; Double-tap = Approve &middot; Swipe &larr; N/A &middot; Swipe &rarr; Undo</span>
+  </div>`;
 
   // Collapsible categories
   categories.forEach(cat => {
@@ -581,9 +586,9 @@ async function loadPhaseDetail(phaseId) {
 
   $content.innerHTML = html;
 
-  // Category collapse toggle (double-click to expand/collapse)
+  // Category collapse toggle (click to expand/collapse)
   document.querySelectorAll('.cat-header').forEach(header => {
-    header.addEventListener('dblclick', () => {
+    header.addEventListener('click', () => {
       const catId = header.dataset.catId;
       const body = header.nextElementSibling;
       const chevron = header.querySelector('.cat-chevron');
@@ -629,6 +634,27 @@ async function loadPhaseDetail(phaseId) {
   }
 
   bindItemCards(phaseId);
+
+  // Gesture info button
+  const infoBtn = document.getElementById('gesture-info-btn');
+  if (infoBtn) {
+    infoBtn.onclick = (e) => {
+      e.stopPropagation();
+      $('#modal-body').innerHTML = `
+        <h2>Gesture Guide</h2>
+        <div class="gesture-guide">
+          <div class="gesture-row"><span class="gesture-icon">👆</span><div><strong>Tap</strong><br>Flag an open item</div></div>
+          <div class="gesture-row"><span class="gesture-icon">👆👆</span><div><strong>Double-tap</strong><br>Approve / complete an item</div></div>
+          <div class="gesture-row"><span class="gesture-icon">👈</span><div><strong>Swipe Left</strong><br>Mark as N/A</div></div>
+          <div class="gesture-row"><span class="gesture-icon">👉</span><div><strong>Swipe Right</strong><br>Undo / reset to open</div></div>
+          <div class="gesture-row"><span class="gesture-icon">👆⏳</span><div><strong>Long Press</strong><br>Show all status options</div></div>
+          <div class="gesture-row"><span class="gesture-icon">🖱️</span><div><strong>Right-click</strong><br>Context menu (desktop)</div></div>
+        </div>
+        <div class="modal-actions"><button class="btn btn-ghost" id="m-cancel">Got it</button></div>`;
+      $modalOverlay.classList.add('open');
+      $('#m-cancel').onclick = closeModal;
+    };
+  }
 
   $content.querySelectorAll('.add-item-btn').forEach(btn => {
     btn.addEventListener('click', (e) => { e.stopPropagation(); openAddItemModal(parseInt(btn.dataset.catId), btn.dataset.catName, phaseId); });
@@ -780,10 +806,10 @@ function bindItemCards(phaseId) {
       }, 350);
     });
 
-    // Long press = bulk mode
+    // Long press = action menu
     let pressTimer;
     card.addEventListener('touchstart', () => {
-      pressTimer = setTimeout(() => { if (!bulkMode && !swipeDir) { enterBulkMode(); toggleBulkSelect(card); } }, 600);
+      pressTimer = setTimeout(() => { if (!bulkMode && !swipeDir) showActionMenu(parseInt(itemId), card, phaseId); }, 600);
     }, { passive: true });
     card.addEventListener('touchend', () => clearTimeout(pressTimer));
     card.addEventListener('touchmove', () => clearTimeout(pressTimer));
@@ -963,12 +989,103 @@ async function loadFlaggedItems() {
 function showReports() { $content.innerHTML = `<div class="coming-soon"><h2>Reports</h2><p style="font-size:.9rem;margin-top:8px">PDF and Excel export coming soon.</p></div>`; }
 
 function showMore() {
-  $content.innerHTML = `
-    <div class="settings-section"><div class="settings-item" id="more-archive"><div class="settings-icon" style="background:var(--na-bg);color:var(--na)"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="16" height="4" rx="1"/><path d="M3 7v7a2 2 0 002 2h10a2 2 0 002-2V7M8 11h4"/></svg></div>Archived Projects</div><div class="settings-item" id="more-seed"><div class="settings-icon" style="background:#E3F2FD;color:#42A5F5"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></div>Re-seed Template</div></div>
-    <div style="text-align:center;padding:20px;font-size:.75rem;color:var(--text-muted)">SiteCheck v1.0</div>`;
+  const savedTheme = localStorage.getItem('sc-theme') || 'system';
+  const isAdmin = currentUser && currentUser.role === 'admin';
+
+  let html = `
+    <div class="settings-section">
+      <div class="section-title">Settings</div>
+      <div class="settings-item" id="more-archive">
+        <div class="settings-icon" style="background:var(--na-bg);color:var(--na)"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="16" height="4" rx="1"/><path d="M3 7v7a2 2 0 002 2h10a2 2 0 002-2V7M8 11h4"/></svg></div>
+        Archived Projects
+      </div>
+      <div class="settings-item" id="more-seed">
+        <div class="settings-icon" style="background:#E3F2FD;color:#42A5F5"><svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83"/></svg></div>
+        Re-seed Template
+      </div>
+    </div>
+
+    <div class="settings-section">
+      <div class="section-title">Appearance</div>
+      <div class="theme-picker">
+        <button class="theme-btn ${savedTheme === 'light' ? 'active' : ''}" data-theme="light">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="9" cy="9" r="4"/><path d="M9 1v2M9 15v2M1 9h2M15 9h2M3.3 3.3l1.4 1.4M13.3 13.3l1.4 1.4M3.3 14.7l1.4-1.4M13.3 4.7l1.4-1.4"/></svg>
+          Light
+        </button>
+        <button class="theme-btn ${savedTheme === 'dark' ? 'active' : ''}" data-theme="dark">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 11.5A7 7 0 016.5 3a7 7 0 109 8.5z"/></svg>
+          Dark
+        </button>
+        <button class="theme-btn ${savedTheme === 'system' ? 'active' : ''}" data-theme="system">
+          <svg width="18" height="18" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="14" height="10" rx="2"/><path d="M5 16h8"/></svg>
+          System
+        </button>
+      </div>
+    </div>`;
+
+  if (isAdmin) {
+    html += `
+      <div class="settings-section">
+        <div class="section-title">User Management</div>
+        <div id="admin-users-list"><p style="font-size:.85rem;color:var(--text-muted)">Loading users...</p></div>
+      </div>`;
+  }
+
+  html += `<div style="text-align:center;padding:20px;font-size:.75rem;color:var(--text-muted)">SiteCheck v1.0</div>`;
+
+  $content.innerHTML = html;
+
   $('#more-archive').onclick = () => navigateTo('archived');
   $('#more-seed').onclick = async () => { if (confirm('Re-seed template?')) { await api('/template/seed', { method: 'POST' }); alert('Done.'); } };
+
+  // Theme picker
+  document.querySelectorAll('.theme-btn').forEach(btn => {
+    btn.onclick = () => {
+      const theme = btn.dataset.theme;
+      localStorage.setItem('sc-theme', theme);
+      applyTheme(theme);
+      document.querySelectorAll('.theme-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    };
+  });
+
+  // Admin: load users
+  if (isAdmin) {
+    (async () => {
+      try {
+        const users = await api('/auth/users');
+        const el = document.getElementById('admin-users-list');
+        if (!el) return;
+        if (!users.length) { el.innerHTML = '<p style="font-size:.85rem;color:var(--text-muted)">No users.</p>'; return; }
+        el.innerHTML = users.map(u => `
+          <div class="settings-user-row">
+            <div class="sidebar-user-avatar" style="background:var(--navy);width:32px;height:32px;font-size:.65rem">${initials(u.name)}</div>
+            <div style="flex:1;min-width:0">
+              <div style="font-weight:600;font-size:.85rem">${esc(u.name)}</div>
+              <div style="font-size:.72rem;color:var(--text-muted)">${esc(u.email)} &middot; <span style="text-transform:capitalize">${esc(u.role)}</span></div>
+            </div>
+          </div>`).join('');
+      } catch { document.getElementById('admin-users-list').innerHTML = '<p style="font-size:.85rem;color:var(--text-muted)">Admin access required to view users.</p>'; }
+    })();
+  }
 }
+
+// ── Theme System ────────────────────────────────────────────────────
+function applyTheme(theme) {
+  if (theme === 'system') {
+    const prefersDark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', prefersDark ? 'dark' : 'light');
+  } else {
+    document.documentElement.setAttribute('data-theme', theme);
+  }
+}
+
+// Apply saved theme on load
+applyTheme(localStorage.getItem('sc-theme') || 'system');
+// Listen for system theme changes
+window.matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => {
+  if ((localStorage.getItem('sc-theme') || 'system') === 'system') applyTheme('system');
+});
 
 // ── Modals ───────────────────────────────────────────────────────────
 function openNewProjectModal() {
@@ -1054,9 +1171,10 @@ async function openTimerHistoryModal(phaseId) {
     body += '<p style="font-size:.85rem;color:var(--text-muted);padding:12px 0">No inspections recorded yet.</p>';
   } else {
     body += '<div style="max-height:400px;overflow-y:auto">';
-    history.forEach(h => {
+    history.forEach((h, idx) => {
       const date = new Date(h.started_at).toLocaleDateString('en-CA', { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' });
       const pct = h.total_items > 0 ? Math.round((h.confirmed_count / (h.total_items - h.na_count || 1)) * 100) : 0;
+      const hasSnapshot = !!h.items_snapshot;
       body += `
         <div style="padding:12px 0;border-bottom:1px solid var(--border-light)">
           <div style="display:flex;justify-content:space-between;align-items:center">
@@ -1066,11 +1184,12 @@ async function openTimerHistoryModal(phaseId) {
           ${h.inspector_name ? `<div style="font-size:.75rem;color:var(--navy);font-weight:600;margin-top:3px">Inspector: ${esc(h.inspector_name)}</div>` : ''}
           ${h.total_items > 0 ? `
             <div style="display:flex;gap:8px;margin-top:6px;flex-wrap:wrap">
-              <span class="phase-stat confirmed" style="font-size:.65rem">${h.confirmed_count} Approved</span>
-              <span class="phase-stat flagged" style="font-size:.65rem">${h.flagged_count} Flagged</span>
-              <span class="phase-stat unchecked" style="font-size:.65rem">${h.unchecked_count} Pending</span>
-              <span class="phase-stat na" style="font-size:.65rem">${h.na_count} N/A</span>
+              <span class="phase-stat confirmed hist-stat-toggle" data-hist="${idx}" data-status="confirmed" style="font-size:.65rem;cursor:pointer" title="Click to see items">${h.confirmed_count} Approved</span>
+              <span class="phase-stat flagged hist-stat-toggle" data-hist="${idx}" data-status="flagged" style="font-size:.65rem;cursor:pointer" title="Click to see items">${h.flagged_count} Flagged</span>
+              <span class="phase-stat unchecked hist-stat-toggle" data-hist="${idx}" data-status="unchecked" style="font-size:.65rem;cursor:pointer" title="Click to see items">${h.unchecked_count} Pending</span>
+              <span class="phase-stat na hist-stat-toggle" data-hist="${idx}" data-status="na" style="font-size:.65rem;cursor:pointer" title="Click to see items">${h.na_count} N/A</span>
             </div>
+            <div class="hist-items-detail" id="hist-items-${idx}" style="display:none;margin-top:8px;padding:8px;background:var(--bg);border-radius:8px;font-size:.75rem"></div>
             <div style="margin-top:6px">
               <div style="display:flex;align-items:center;gap:8px">
                 <div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--confirmed);border-radius:2px"></div></div>
@@ -1087,6 +1206,43 @@ async function openTimerHistoryModal(phaseId) {
   $('#modal-body').innerHTML = body;
   $modalOverlay.classList.add('open');
   $('#m-cancel').onclick = closeModal;
+
+  // Bind clickable status counts to show item details
+  document.querySelectorAll('.hist-stat-toggle').forEach(stat => {
+    stat.onclick = () => {
+      const idx = stat.dataset.hist;
+      const status = stat.dataset.status;
+      const h = history[idx];
+      const detailEl = document.getElementById(`hist-items-${idx}`);
+      if (!detailEl) return;
+
+      // Toggle visibility
+      if (detailEl.style.display !== 'none' && detailEl.dataset.activeStatus === status) {
+        detailEl.style.display = 'none';
+        return;
+      }
+      detailEl.dataset.activeStatus = status;
+      detailEl.style.display = '';
+
+      const statusLabels = { confirmed: 'Approved', flagged: 'Flagged', unchecked: 'Pending', na: 'N/A' };
+      let itemsHtml = `<strong>${statusLabels[status]} Items:</strong><br>`;
+
+      if (h.items_snapshot) {
+        try {
+          const snap = JSON.parse(h.items_snapshot);
+          const items = snap[status] || [];
+          if (items.length) {
+            items.forEach(it => { itemsHtml += `<div style="padding:3px 0;border-bottom:1px solid var(--border-light)">• ${esc(it.desc)} <span style="color:var(--text-muted);font-size:.65rem">(${esc(it.cat)})</span></div>`; });
+          } else {
+            itemsHtml += '<div style="color:var(--text-muted);padding:4px 0">No items</div>';
+          }
+        } catch { itemsHtml += '<div style="color:var(--text-muted)">Snapshot not available</div>'; }
+      } else {
+        itemsHtml += '<div style="color:var(--text-muted)">Item details not captured for this inspection</div>';
+      }
+      detailEl.innerHTML = itemsHtml;
+    };
+  });
 }
 
 // ── Calendar View ───────────────────────────────────────────────────
@@ -1180,12 +1336,14 @@ async function loadCalendar() {
 }
 
 function openAddEventModal(prefillDate, projects) {
+  const todayISO = new Date().toISOString().slice(0, 10);
+  const dateVal = prefillDate && prefillDate >= todayISO ? prefillDate : todayISO;
   const projectOptions = projects.filter(p => !p.is_template && !p.is_archived).map(p => `<option value="${p.id}">${esc(p.name)}</option>`).join('');
   $('#modal-body').innerHTML = `
     <h2>New Event</h2>
     <div class="form-group"><label class="form-label">Project</label><select class="form-select" id="m-proj">${projectOptions}</select></div>
     <div class="form-group"><label class="form-label">Title *</label><input class="form-input" id="m-title" placeholder="e.g. Foundation inspection"></div>
-    <div class="form-group"><label class="form-label">Date *</label><input class="form-input" id="m-date" type="date" value="${prefillDate}"></div>
+    <div class="form-group"><label class="form-label">Date *</label><input class="form-input" id="m-date" type="date" value="${dateVal}" min="${todayISO}"></div>
     <div class="form-group"><label class="form-label">Time</label><input class="form-input" id="m-time" type="time"></div>
     <div class="form-group"><label class="form-label">Notes</label><textarea class="form-input" id="m-note" rows="2" placeholder="Optional notes..."></textarea></div>
     <div class="form-group" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="m-notify"><label for="m-notify" style="font-size:.85rem">Send notification reminder</label></div>
@@ -1210,12 +1368,13 @@ function openAddEventModal(prefillDate, projects) {
 
 async function openEditEventModal(eventId, projects) {
   const ev = await api(`/events/${eventId}`);
+  const todayISO = new Date().toISOString().slice(0, 10);
   const projectOptions = projects.filter(p => !p.is_template && !p.is_archived).map(p => `<option value="${p.id}" ${p.id === ev.project_id ? 'selected' : ''}>${esc(p.name)}</option>`).join('');
   $('#modal-body').innerHTML = `
     <h2>Edit Event</h2>
     <div class="form-group"><label class="form-label">Project</label><select class="form-select" id="m-proj" disabled>${projectOptions}</select></div>
     <div class="form-group"><label class="form-label">Title</label><input class="form-input" id="m-title" value="${esc(ev.title)}"></div>
-    <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="m-date" type="date" value="${ev.event_date}"></div>
+    <div class="form-group"><label class="form-label">Date</label><input class="form-input" id="m-date" type="date" value="${ev.event_date}" min="${todayISO}"></div>
     <div class="form-group"><label class="form-label">Time</label><input class="form-input" id="m-time" type="time" value="${ev.event_time || ''}"></div>
     <div class="form-group"><label class="form-label">Notes</label><textarea class="form-input" id="m-note" rows="2">${esc(ev.note || '')}</textarea></div>
     <div class="form-group" style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="m-notify" ${ev.notify ? 'checked' : ''}><label for="m-notify" style="font-size:.85rem">Send notification reminder</label></div>
@@ -1240,9 +1399,19 @@ let notifEvents = [];
 let notifDropdownOpen = false;
 let notifiedEventIds = new Set(); // track which events already played sound
 
+// Shared AudioContext — must be created/resumed after user gesture
+let _audioCtx = null;
+function _getAudioCtx() {
+  if (!_audioCtx) _audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (_audioCtx.state === 'suspended') _audioCtx.resume();
+  return _audioCtx;
+}
+// Resume audio context on first user interaction (required by desktop browsers)
+document.addEventListener('click', () => { try { _getAudioCtx(); } catch {} }, { once: true });
+
 function playNotifSound() {
   try {
-    const ctx = new (window.AudioContext || window.webkitAudioContext)();
+    const ctx = _getAudioCtx();
     // Soft chime: two gentle tones
     [440, 554].forEach((freq, i) => {
       const osc = ctx.createOscillator();
@@ -1283,10 +1452,14 @@ async function refreshNotifications() {
       $notifBell.classList.remove('has-notifs');
     }
 
-    // Check if any event is happening RIGHT NOW (match hour:minute) — play sound
-    const currentTime = `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    // Check if any event is happening NOW (within 2 min window) — play sound
+    const nowMins = now.getHours() * 60 + now.getMinutes();
     notifEvents.forEach(ev => {
-      if (ev.event_date === todayStr && ev.event_time === currentTime && !notifiedEventIds.has(ev.id)) {
+      if (!ev.event_time) return;
+      const [eh, em] = ev.event_time.split(':').map(Number);
+      const evMins = eh * 60 + em;
+      const diff = Math.abs(nowMins - evMins);
+      if (ev.event_date === todayStr && diff <= 2 && !notifiedEventIds.has(ev.id)) {
         notifiedEventIds.add(ev.id);
         playNotifSound();
         // Browser notification
@@ -1307,7 +1480,7 @@ function renderNotifDropdown() {
 
   const todayStr = new Date().toISOString().slice(0, 10);
 
-  let inner = `<div class="notif-dropdown-header"><span>Notifications</span><span style="font-size:.7rem;color:var(--text-muted)">${notifEvents.length} upcoming</span></div>`;
+  let inner = `<div class="notif-dropdown-header"><span>Notifications</span><span style="font-size:.7rem;color:var(--text-muted)">${notifEvents.length} upcoming</span>${notifEvents.length ? '<button class="notif-clear-btn" id="notif-clear">Clear</button>' : ''}</div>`;
 
   if (!notifEvents.length) {
     inner += '<div class="notif-empty">No upcoming reminders</div>';
@@ -1329,6 +1502,22 @@ function renderNotifDropdown() {
   dropdown.innerHTML = inner;
   $notifBell.parentElement.style.position = 'relative';
   $notifBell.parentElement.appendChild(dropdown);
+
+  // Clear all notifications (turn off notify flag)
+  const clearBtn = dropdown.querySelector('#notif-clear');
+  if (clearBtn) {
+    clearBtn.onclick = async (e) => {
+      e.stopPropagation();
+      for (const ev of notifEvents) {
+        await api(`/events/${ev.id}`, { method: 'PATCH', body: { notify: false } });
+      }
+      notifEvents = [];
+      $notifBadge.style.display = 'none';
+      $notifBell.classList.remove('has-notifs');
+      dropdown.remove();
+      notifDropdownOpen = false;
+    };
+  }
 
   // Click event items to navigate
   dropdown.querySelectorAll('.notif-item').forEach(item => {
@@ -1376,6 +1565,14 @@ function showAuthScreen() {
       <div class="auth-card">
         <div class="auth-logo">Site<em>Check</em></div>
         <p class="auth-subtitle">Construction Quality Control</p>
+        <div id="google-signin-wrap" style="display:none;margin-bottom:16px">
+          <div id="g_id_onload"></div>
+          <div class="google-btn-wrap"><button class="btn-google" id="google-signin-btn">
+            <svg width="18" height="18" viewBox="0 0 48 48"><path fill="#EA4335" d="M24 9.5c3.54 0 6.71 1.22 9.21 3.6l6.85-6.85C35.9 2.38 30.47 0 24 0 14.62 0 6.51 5.38 2.56 13.22l7.98 6.19C12.43 13.72 17.74 9.5 24 9.5z"/><path fill="#4285F4" d="M46.98 24.55c0-1.57-.15-3.09-.38-4.55H24v9.02h12.94c-.58 2.96-2.26 5.48-4.78 7.18l7.73 6c4.51-4.18 7.09-10.36 7.09-17.65z"/><path fill="#FBBC05" d="M10.53 28.59c-.48-1.45-.76-2.99-.76-4.59s.27-3.14.76-4.59l-7.98-6.19C.92 16.46 0 20.12 0 24c0 3.88.92 7.54 2.56 10.78l7.97-6.19z"/><path fill="#34A853" d="M24 48c6.48 0 11.93-2.13 15.89-5.81l-7.73-6c-2.15 1.45-4.92 2.3-8.16 2.3-6.26 0-11.57-4.22-13.47-9.91l-7.98 6.19C6.51 42.62 14.62 48 24 48z"/></svg>
+            Sign in with Google
+          </button></div>
+          <div class="auth-divider"><span>or</span></div>
+        </div>
         <div id="auth-form">
           <div class="auth-tabs">
             <button class="auth-tab active" id="tab-login">Login</button>
@@ -1391,6 +1588,7 @@ function showAuthScreen() {
             <div class="form-group"><label class="form-label">Full Name</label><input class="form-input" id="a-name" placeholder="John Smith"></div>
             <div class="form-group"><label class="form-label">Email</label><input class="form-input" id="a-reg-email" type="email" placeholder="you@example.com"></div>
             <div class="form-group"><label class="form-label">Password</label><input class="form-input" id="a-reg-password" type="password" placeholder="Min 4 characters"></div>
+            <div class="form-group"><label class="form-label">Role</label><select class="form-select" id="a-role"><option value="engineer">Engineer</option><option value="project_manager">Project Manager</option><option value="contractor">Contractor</option><option value="admin">Admin</option></select></div>
             <div id="reg-error" style="color:var(--flagged);font-size:.8rem;margin-bottom:8px;display:none"></div>
             <button class="btn btn-primary" style="width:100%" id="a-register-btn">Create Account</button>
           </div>
@@ -1429,7 +1627,7 @@ function showAuthScreen() {
     try {
       const res = await fetch(`${API}/auth/register`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: $('#a-name').value.trim(), email: $('#a-reg-email').value.trim(), password: pw }),
+        body: JSON.stringify({ name: $('#a-name').value.trim(), email: $('#a-reg-email').value.trim(), password: pw, role: $('#a-role').value }),
       });
       if (!res.ok) { const d = await res.json(); throw new Error(d.detail || 'Registration failed'); }
       currentUser = await res.json();
@@ -1440,6 +1638,63 @@ function showAuthScreen() {
   // Enter key support
   document.querySelectorAll('#auth-login-form input').forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') $('#a-login-btn').click(); }));
   document.querySelectorAll('#auth-register-form input').forEach(el => el.addEventListener('keydown', e => { if (e.key === 'Enter') $('#a-register-btn').click(); }));
+
+  // Initialize Google Sign-In if configured
+  initGoogleSignIn();
+}
+
+async function initGoogleSignIn() {
+  try {
+    const resp = await fetch(`${API}/auth/google-client-id`);
+    if (!resp.ok) return; // Google OAuth not configured
+    const { client_id } = await resp.json();
+    if (!client_id) return;
+
+    // Show the Google button
+    const wrap = document.getElementById('google-signin-wrap');
+    if (wrap) wrap.style.display = '';
+
+    // Wait for Google GSI library to load
+    const waitForGoogle = () => new Promise(resolve => {
+      if (window.google?.accounts?.id) return resolve();
+      const check = setInterval(() => { if (window.google?.accounts?.id) { clearInterval(check); resolve(); } }, 200);
+      setTimeout(() => { clearInterval(check); resolve(); }, 5000);
+    });
+    await waitForGoogle();
+    if (!window.google?.accounts?.id) return;
+
+    window.google.accounts.id.initialize({
+      client_id,
+      callback: handleGoogleCredential,
+    });
+
+    // Custom button click
+    const btn = document.getElementById('google-signin-btn');
+    if (btn) {
+      btn.onclick = () => {
+        window.google.accounts.id.prompt();
+      };
+    }
+  } catch {}
+}
+
+async function handleGoogleCredential(response) {
+  try {
+    const res = await fetch(`${API}/auth/google`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ credential: response.credential }),
+    });
+    if (!res.ok) {
+      const d = await res.json();
+      throw new Error(d.detail || 'Google sign-in failed');
+    }
+    currentUser = await res.json();
+    startApp();
+  } catch (e) {
+    const errEl = $('#auth-error');
+    if (errEl) { errEl.textContent = e.message; errEl.style.display = 'block'; }
+  }
 }
 
 function updateUserUI() {

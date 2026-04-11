@@ -3,7 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
 from sqlalchemy.orm import selectinload
 from app.database import get_db
-from app.models import Project, Phase, Category, ChecklistItem, ProjectNote, PhaseInspection, InspectionEvent, User, VALID_STATUSES, VALID_TAGS
+from app.models import Project, Phase, Category, ChecklistItem, ProjectNote, PhaseInspection, InspectionEvent, User, UserSession, VALID_STATUSES, VALID_TAGS
 from app.schemas import (
     ProjectCreate, ProjectUpdate, PhaseCreate, CategoryCreate, ItemCreate,
     StatusUpdate, CommentUpdate, NoteCreate, ItemUpdate, ItemMove,
@@ -14,20 +14,32 @@ from app.schemas import (
     DashboardOut, SearchResultOut,
 )
 from app.template_data import MASTER_TEMPLATE
-from datetime import datetime, timezone
+from app.email_utils import send_email, build_phase_report_html
+from config import settings
+from datetime import datetime, timezone, timedelta, date
 import secrets
+import json
+import httpx
 
 router = APIRouter(prefix="/api")
 
-# Simple in-memory session store (token -> user_id)
-_sessions: dict[str, int] = {}
+SESSION_MAX_AGE = 24 * 3600  # 24 hours
 
 
 async def get_current_user(request: Request, db: AsyncSession = Depends(get_db)) -> User | None:
     token = request.cookies.get("session_token")
-    if not token or token not in _sessions:
+    if not token:
         return None
-    user = await db.get(User, _sessions[token])
+    result = await db.execute(
+        select(UserSession).where(
+            UserSession.token == token,
+            UserSession.expires_at > datetime.now(timezone.utc),
+        )
+    )
+    session = result.scalar_one_or_none()
+    if not session:
+        return None
+    user = await db.get(User, session.user_id)
     return user
 
 
@@ -38,6 +50,10 @@ async def require_user(request: Request, db: AsyncSession = Depends(get_db)) -> 
     return user
 
 
+def _create_session_token():
+    return secrets.token_hex(32)
+
+
 # ── Auth ─────────────────────────────────────────────────────────────
 
 @router.post("/auth/register", response_model=UserOut, status_code=201)
@@ -45,13 +61,17 @@ async def register(data: RegisterRequest, response: Response, db: AsyncSession =
     existing = await db.execute(select(User).where(User.email == data.email))
     if existing.scalar_one_or_none():
         raise HTTPException(400, "Email already registered")
-    user = User(name=data.name, email=data.email, password_hash=User.hash_password(data.password))
+    valid_roles = ("admin", "engineer", "project_manager", "contractor")
+    role = data.role if data.role in valid_roles else "engineer"
+    user = User(name=data.name, email=data.email, password_hash=User.hash_password(data.password), role=role)
     db.add(user)
     await db.commit()
     await db.refresh(user)
-    token = secrets.token_hex(32)
-    _sessions[token] = user.id
-    response.set_cookie("session_token", token, httponly=True, samesite="lax", max_age=30*86400)
+    token = _create_session_token()
+    session = UserSession(token=token, user_id=user.id, expires_at=datetime.now(timezone.utc) + timedelta(seconds=SESSION_MAX_AGE))
+    db.add(session)
+    await db.commit()
+    response.set_cookie("session_token", token, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE)
     return user
 
 
@@ -61,17 +81,23 @@ async def login(data: LoginRequest, response: Response, db: AsyncSession = Depen
     user = result.scalar_one_or_none()
     if not user or not user.verify_password(data.password):
         raise HTTPException(401, "Invalid email or password")
-    token = secrets.token_hex(32)
-    _sessions[token] = user.id
-    response.set_cookie("session_token", token, httponly=True, samesite="lax", max_age=30*86400)
+    token = _create_session_token()
+    session = UserSession(token=token, user_id=user.id, expires_at=datetime.now(timezone.utc) + timedelta(seconds=SESSION_MAX_AGE))
+    db.add(session)
+    await db.commit()
+    response.set_cookie("session_token", token, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE)
     return user
 
 
 @router.post("/auth/logout")
-async def logout(request: Request, response: Response):
+async def logout(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
     token = request.cookies.get("session_token")
-    if token and token in _sessions:
-        del _sessions[token]
+    if token:
+        result = await db.execute(select(UserSession).where(UserSession.token == token))
+        session = result.scalar_one_or_none()
+        if session:
+            await db.delete(session)
+            await db.commit()
     response.delete_cookie("session_token")
     return {"message": "Logged out"}
 
@@ -85,9 +111,70 @@ async def get_me(request: Request, db: AsyncSession = Depends(get_db)):
 
 
 @router.get("/auth/users", response_model=list[UserOut])
-async def list_users(db: AsyncSession = Depends(get_db)):
+async def list_users(request: Request, db: AsyncSession = Depends(get_db)):
+    user = await get_current_user(request, db)
+    if not user or user.role != "admin":
+        raise HTTPException(403, "Admin access required")
     result = await db.execute(select(User).order_by(User.name))
     return result.scalars().all()
+
+
+@router.get("/auth/google-client-id")
+async def google_client_id():
+    """Return the Google client ID so the frontend can initialize GSI."""
+    cid = settings.google_client_id
+    if not cid:
+        raise HTTPException(404, "Google OAuth not configured")
+    return {"client_id": cid}
+
+
+@router.post("/auth/google", response_model=UserOut)
+async def google_auth(request: Request, response: Response, db: AsyncSession = Depends(get_db)):
+    """Verify a Google ID token and log the user in (creating account if needed)."""
+    body = await request.json()
+    credential = body.get("credential", "")
+    if not credential:
+        raise HTTPException(400, "Missing credential")
+
+    # Verify the token with Google
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            "https://oauth2.googleapis.com/tokeninfo",
+            params={"id_token": credential},
+        )
+    if resp.status_code != 200:
+        raise HTTPException(401, "Invalid Google token")
+
+    info = resp.json()
+    # Verify audience matches our client ID
+    if info.get("aud") != settings.google_client_id:
+        raise HTTPException(401, "Token audience mismatch")
+
+    email = info.get("email")
+    name = info.get("name", email.split("@")[0])
+    if not email:
+        raise HTTPException(400, "No email in Google token")
+
+    # Find or create user
+    result = await db.execute(select(User).where(User.email == email))
+    user = result.scalar_one_or_none()
+    if not user:
+        user = User(
+            name=name, email=email,
+            password_hash=User.hash_password(secrets.token_hex(16)),  # random password for Google users
+            role="engineer",
+        )
+        db.add(user)
+        await db.commit()
+        await db.refresh(user)
+
+    # Create session
+    token = _create_session_token()
+    session = UserSession(token=token, user_id=user.id, expires_at=datetime.now(timezone.utc) + timedelta(seconds=SESSION_MAX_AGE))
+    db.add(session)
+    await db.commit()
+    response.set_cookie("session_token", token, httponly=True, samesite="lax", max_age=SESSION_MAX_AGE)
+    return user
 
 
 # ── Helpers ───────────────────────────────────────────────────────────
@@ -166,6 +253,47 @@ def _phase_to_out(phase, include_categories=False):
         unchecked_count=counts["unchecked"], na_count=counts["na"],
         progress_pct=pct, is_complete=is_complete,
     )
+
+
+async def _check_phase_complete_and_email(category_id: int, request: Request, db: AsyncSession):
+    """If all non-N/A items in the phase are confirmed, email admin users."""
+    try:
+        category = await db.get(Category, category_id)
+        if not category:
+            return
+        phase_result = await db.execute(
+            select(Phase).where(Phase.id == category.phase_id).options(*_phase_eager_options())
+        )
+        phase = phase_result.scalar_one_or_none()
+        if not phase:
+            return
+        total, counts, _, is_complete = _phase_stats(phase)
+        if not is_complete:
+            return
+
+        # Get project name
+        project = await db.get(Project, phase.project_id)
+        if not project or project.is_template:
+            return
+
+        # Get current user name
+        user = await get_current_user(request, db)
+        inspector = user.name if user else ""
+
+        # Find admin + project manager users
+        notify_result = await db.execute(
+            select(User).where(User.role.in_(["admin", "project_manager"]))
+        )
+        notify_users = notify_result.scalars().all()
+        if not notify_users:
+            return
+
+        admin_emails = [u.email for u in notify_users]
+        subject = f"Phase Complete: {phase.name} - {project.name}"
+        html = build_phase_report_html(project.name, phase.name, phase.categories, inspector)
+        await send_email(admin_emails, subject, html)
+    except Exception as e:
+        print(f"[EMAIL CHECK] Error: {e}")
 
 
 # ── Dashboard ─────────────────────────────────────────────────────────
@@ -501,7 +629,7 @@ async def _sync_item_edit_to_all(db: AsyncSession, source_project_id: int, phase
 
 
 @router.patch("/items/{item_id}/status", response_model=ItemOut)
-async def update_status(item_id: int, data: StatusUpdate, db: AsyncSession = Depends(get_db)):
+async def update_status(item_id: int, data: StatusUpdate, request: Request, db: AsyncSession = Depends(get_db)):
     if data.status not in VALID_STATUSES:
         raise HTTPException(400, f"Invalid status. Must be one of: {VALID_STATUSES}")
     item = await db.get(ChecklistItem, item_id)
@@ -511,6 +639,11 @@ async def update_status(item_id: int, data: StatusUpdate, db: AsyncSession = Dep
     item.updated_at = datetime.now(timezone.utc)
     await db.commit()
     await db.refresh(item)
+
+    # Check if the entire phase is now complete → send email to admins
+    if data.status == "confirmed":
+        await _check_phase_complete_and_email(item.category_id, request, db)
+
     return ItemOut(
         id=item.id, description=item.description, status=item.status,
         tag=item.tag, comment=item.comment, is_custom=item.is_custom,
@@ -755,7 +888,7 @@ async def start_inspection_timer(phase_id: int, db: AsyncSession = Depends(get_d
 
 
 @router.patch("/inspections/{inspection_id}/stop", response_model=PhaseInspectionOut)
-async def stop_inspection_timer(inspection_id: int, data: InspectionStop, db: AsyncSession = Depends(get_db)):
+async def stop_inspection_timer(inspection_id: int, data: InspectionStop, request: Request, db: AsyncSession = Depends(get_db)):
     inspection = await db.get(PhaseInspection, inspection_id)
     if not inspection:
         raise HTTPException(404)
@@ -764,7 +897,12 @@ async def stop_inspection_timer(inspection_id: int, data: InspectionStop, db: As
     if data.note:
         inspection.note = data.note
 
-    # Capture phase snapshot
+    # Set inspector name from logged-in user
+    user = await get_current_user(request, db)
+    if user:
+        inspection.inspector_name = user.name
+
+    # Capture phase snapshot with item details
     result = await db.execute(
         select(Phase).where(Phase.id == inspection.phase_id).options(*_phase_eager_options())
     )
@@ -776,6 +914,13 @@ async def stop_inspection_timer(inspection_id: int, data: InspectionStop, db: As
         inspection.flagged_count = counts["flagged"]
         inspection.unchecked_count = counts["unchecked"]
         inspection.na_count = counts["na"]
+
+        # Build items snapshot grouped by status
+        snapshot = {"confirmed": [], "flagged": [], "unchecked": [], "na": []}
+        for cat in phase.categories:
+            for item in cat.items:
+                snapshot[item.status].append({"desc": item.description, "cat": cat.name})
+        inspection.items_snapshot = json.dumps(snapshot)
 
     await db.commit()
     await db.refresh(inspection)
@@ -800,6 +945,9 @@ async def create_event(data: EventCreate, db: AsyncSession = Depends(get_db)):
     project = await db.get(Project, data.project_id)
     if not project:
         raise HTTPException(404, "Project not found")
+    today = date.today().isoformat()
+    if data.event_date < today:
+        raise HTTPException(400, "Cannot create events in the past")
     event = InspectionEvent(
         project_id=data.project_id, title=data.title,
         event_date=data.event_date, event_time=data.event_time,
@@ -836,6 +984,9 @@ async def update_event(event_id: int, data: EventUpdate, db: AsyncSession = Depe
     event = await db.get(InspectionEvent, event_id)
     if not event:
         raise HTTPException(404)
+    today = date.today().isoformat()
+    if data.event_date and data.event_date < today:
+        raise HTTPException(400, "Event date must be today or in the future")
     for field in ["title", "event_date", "event_time", "note", "notify"]:
         val = getattr(data, field, None)
         if val is not None:

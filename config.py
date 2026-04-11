@@ -5,6 +5,17 @@ class Settings(BaseSettings):
     database_url: str = "sqlite+aiosqlite:///./sitecheck.db"
     secret_key: str = "dev-secret-key"
 
+    # Google OAuth
+    google_client_id: str = ""
+    google_client_secret: str = ""
+
+    # SMTP Email
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_user: str = ""
+    smtp_password: str = ""
+    smtp_from_email: str = ""
+
     class Config:
         env_file = ".env"
 

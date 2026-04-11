@@ -2099,6 +2099,45 @@ body {
   box-shadow: var(--shadow-sm);
 }
 
+/* ── Google Sign-In Button ───────────────────────────────────────── */
+.btn-google {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  width: 100%;
+  padding: 11px 16px;
+  border: 1.5px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  font-size: .88rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.btn-google:hover {
+  border-color: #4285F4;
+  box-shadow: var(--shadow-sm);
+}
+
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 16px 0;
+  font-size: .78rem;
+  color: var(--text-muted);
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
 /* ── Sidebar User ────────────────────────────────────────────────── */
 .sidebar-user-info {
   display: flex;
@@ -2129,6 +2168,240 @@ body {
   font-size: .65rem;
   color: rgba(255,255,255,.5);
   text-transform: capitalize;
+}
+
+/* ── Mobile Auth Fix ─────────────────────────────────────────────── */
+@media (max-width: 767px) {
+  .auth-container {
+    padding: 16px;
+    min-height: 100dvh;
+    align-items: flex-start;
+    padding-top: 15vh;
+  }
+  .auth-card {
+    padding: 28px 20px;
+    border-radius: 16px;
+    max-width: 100%;
+  }
+  .auth-logo {
+    font-size: 1.5rem;
+  }
+  .auth-subtitle {
+    font-size: .78rem;
+  }
+  .auth-tabs {
+    margin-bottom: 16px;
+  }
+  .auth-tab {
+    font-size: .8rem;
+    padding: 7px;
+  }
+  .form-input, .form-select {
+    font-size: 16px !important; /* prevents iOS zoom on focus */
+  }
+}
+
+/* ── Info Button ─────────────────────────────────────────────────── */
+.info-btn {
+  background: none;
+  border: 1.5px solid var(--border);
+  border-radius: 50%;
+  width: 24px;
+  height: 24px;
+  display: inline-grid;
+  place-items: center;
+  cursor: pointer;
+  color: var(--text-muted);
+  flex-shrink: 0;
+  transition: all var(--transition);
+}
+.info-btn:hover {
+  background: var(--bg);
+  color: var(--navy);
+  border-color: var(--navy);
+}
+.item-hint {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+/* ── Gesture Guide ───────────────────────────────────────────────── */
+.gesture-guide {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin: 16px 0;
+}
+.gesture-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 8px 12px;
+  background: var(--bg);
+  border-radius: 10px;
+  font-size: .85rem;
+}
+.gesture-icon {
+  font-size: 1.2rem;
+  width: 32px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+/* ── Theme Picker ────────────────────────────────────────────────── */
+.theme-picker {
+  display: flex;
+  gap: 8px;
+  padding: 4px 0;
+}
+.theme-btn {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  padding: 14px 8px;
+  border: 2px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  font-size: .78rem;
+  font-weight: 600;
+  font-family: inherit;
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.theme-btn:hover {
+  border-color: var(--navy);
+  color: var(--navy);
+}
+.theme-btn.active {
+  border-color: var(--navy);
+  background: rgba(30,58,95,.06);
+  color: var(--navy);
+}
+
+/* ── Settings User Row ───────────────────────────────────────────── */
+.settings-user-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--border-light);
+}
+
+/* ── Notification Clear Button ───────────────────────────────────── */
+.notif-clear-btn {
+  background: none;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 2px 8px;
+  font-size: .65rem;
+  font-family: inherit;
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: all var(--transition);
+}
+.notif-clear-btn:hover {
+  background: var(--flagged-bg);
+  color: var(--flagged);
+  border-color: var(--flagged);
+}
+
+/* ── Dark Mode ───────────────────────────────────────────────────── */
+[data-theme="dark"] {
+  --bg: #0F1419;
+  --surface: #1A2332;
+  --text: #E8ECF0;
+  --text-secondary: #9BA8B6;
+  --text-muted: #6B7A8A;
+  --border: #2A3544;
+  --border-light: #1E2D3D;
+  --shadow-sm: 0 1px 2px rgba(0,0,0,.2);
+  --shadow: 0 1px 3px rgba(0,0,0,.2);
+  --shadow-md: 0 4px 12px rgba(0,0,0,.25);
+  --shadow-lg: 0 8px 24px rgba(0,0,0,.3);
+
+  --unchecked-bg: #3D3520;
+  --flagged-bg: #3D2E1F;
+  --confirmed-bg: #1C3320;
+  --na-bg: #252525;
+}
+
+[data-theme="dark"] .sidebar {
+  background: #0A1220;
+}
+
+[data-theme="dark"] .top-header {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .bottom-nav {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .card,
+[data-theme="dark"] .modal,
+[data-theme="dark"] .bottom-sheet {
+  background: var(--surface);
+}
+
+[data-theme="dark"] .filter-chip {
+  background: var(--surface);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .btn-ghost {
+  color: var(--text-secondary);
+}
+
+[data-theme="dark"] .btn-primary {
+  color: #1A1A2E;
+}
+
+[data-theme="dark"] .modal-overlay {
+  background: rgba(0,0,0,.6);
+}
+
+[data-theme="dark"] .proj-edit-dropdown,
+[data-theme="dark"] .action-menu,
+[data-theme="dark"] .notif-dropdown {
+  background: var(--surface);
+  border-color: var(--border);
+}
+
+[data-theme="dark"] .form-input,
+[data-theme="dark"] .form-select,
+[data-theme="dark"] .sheet-textarea {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text);
+}
+
+[data-theme="dark"] .auth-container {
+  background: linear-gradient(135deg, #060D15, #0F1A28);
+}
+
+[data-theme="dark"] .theme-btn {
+  background: var(--bg);
+  border-color: var(--border);
+  color: var(--text-secondary);
+}
+[data-theme="dark"] .theme-btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(244,197,66,.08);
+}
+
+@media (max-width: 767px) {
+  [data-theme="dark"] .top-header {
+    background: #0A1220;
+    box-shadow: 0 2px 12px rgba(0,0,0,.4);
+  }
 }
 
 /* ── Swipe hint animation ────────────────────────────────────────── */

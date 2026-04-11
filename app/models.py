@@ -1,5 +1,5 @@
-from datetime import datetime, timezone
-from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Boolean, Date
+from datetime import datetime, timezone, timedelta
+from sqlalchemy import Integer, String, Text, DateTime, ForeignKey, Boolean, Index
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.database import Base
 import hashlib, secrets
@@ -12,7 +12,7 @@ class User(Base):
     name: Mapped[str] = mapped_column(String(200), nullable=False)
     email: Mapped[str] = mapped_column(String(300), unique=True, nullable=False)
     password_hash: Mapped[str] = mapped_column(String(300), nullable=False)
-    role: Mapped[str] = mapped_column(String(50), default="inspector")  # admin, inspector
+    role: Mapped[str] = mapped_column(String(50), default="engineer")  # admin, engineer, project_manager, contractor
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
     )
@@ -26,6 +26,21 @@ class User(Base):
     def verify_password(self, password: str) -> bool:
         salt, h = self.password_hash.split(":")
         return hashlib.sha256((salt + password).encode()).hexdigest() == h
+
+
+class UserSession(Base):
+    __tablename__ = "user_sessions"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True)
+    token: Mapped[str] = mapped_column(String(128), unique=True, nullable=False, index=True)
+    user_id: Mapped[int] = mapped_column(ForeignKey("app_users.id", ondelete="CASCADE"), nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), default=lambda: datetime.now(timezone.utc)
+    )
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+    user: Mapped["User"] = relationship()
+
 
 #create projects
 class Project(Base):
@@ -137,6 +152,7 @@ class PhaseInspection(Base):
     unchecked_count: Mapped[int] = mapped_column(Integer, default=0)
     na_count: Mapped[int] = mapped_column(Integer, default=0)
     inspector_name: Mapped[str | None] = mapped_column(String(200), default=None)
+    items_snapshot: Mapped[str | None] = mapped_column(Text, default=None)  # JSON: {"confirmed":[...], "flagged":[...], ...}
 
     phase: Mapped["Phase"] = relationship()
 
