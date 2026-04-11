@@ -16,6 +16,9 @@ class Settings(BaseSettings):
     smtp_password: str = ""
     smtp_from_email: str = ""
 
+    # Gmail API (used on Render where SMTP is blocked)
+    gmail_refresh_token: str = ""
+
     class Config:
         env_file = ".env"
 

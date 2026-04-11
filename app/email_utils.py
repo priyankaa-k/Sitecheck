@@ -1,5 +1,7 @@
 import smtplib
 import socket
+import base64
+import httpx
 from email.mime.text import MIMEText
 from email.mime.multipart import MIMEMultipart
 from config import settings
@@ -9,34 +11,74 @@ from concurrent.futures import ThreadPoolExecutor
 _executor = ThreadPoolExecutor(max_workers=2)
 
 
-def _resolve_ipv4(host, port):
-    """Resolve hostname to IPv4 address to avoid IPv6 issues on Render."""
-    addrs = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
-    if addrs:
-        return addrs[0][4][0]  # First IPv4 address
-    return host
+def _get_gmail_access_token():
+    """Exchange refresh token for a fresh access token."""
+    resp = httpx.post("https://oauth2.googleapis.com/token", data={
+        "client_id": settings.google_client_id,
+        "client_secret": settings.google_client_secret,
+        "refresh_token": settings.gmail_refresh_token,
+        "grant_type": "refresh_token",
+    })
+    if resp.status_code != 200:
+        raise Exception(f"Gmail token refresh failed: {resp.text}")
+    return resp.json()["access_token"]
 
 
-def _send_email_sync(to_emails: list[str], subject: str, html_body: str):
-    """Send an email synchronously (run in thread pool)."""
-    if not settings.smtp_host or not settings.smtp_user:
-        print(f"[EMAIL] SMTP not configured. Would send to {to_emails}: {subject}")
-        return
-
+def _send_via_gmail_api(to_emails: list[str], subject: str, html_body: str):
+    """Send email using Gmail API over HTTP (works on Render)."""
     msg = MIMEMultipart("alternative")
     msg["Subject"] = subject
     msg["From"] = settings.smtp_from_email or settings.smtp_user
     msg["To"] = ", ".join(to_emails)
     msg.attach(MIMEText(html_body, "html"))
 
+    raw = base64.urlsafe_b64encode(msg.as_bytes()).decode()
+
+    access_token = _get_gmail_access_token()
+    resp = httpx.post(
+        "https://gmail.googleapis.com/gmail/v1/users/me/messages/send",
+        headers={"Authorization": f"Bearer {access_token}"},
+        json={"raw": raw},
+        timeout=30,
+    )
+    if resp.status_code != 200:
+        raise Exception(f"Gmail API error: {resp.status_code} {resp.text}")
+
+
+def _resolve_ipv4(host, port):
+    """Resolve hostname to IPv4 address to avoid IPv6 issues."""
+    addrs = socket.getaddrinfo(host, port, socket.AF_INET, socket.SOCK_STREAM)
+    if addrs:
+        return addrs[0][4][0]
+    return host
+
+
+def _send_via_smtp(to_emails: list[str], subject: str, html_body: str):
+    """Send email using SMTP (works locally)."""
+    msg = MIMEMultipart("alternative")
+    msg["Subject"] = subject
+    msg["From"] = settings.smtp_from_email or settings.smtp_user
+    msg["To"] = ", ".join(to_emails)
+    msg.attach(MIMEText(html_body, "html"))
+
+    host = _resolve_ipv4(settings.smtp_host, settings.smtp_port)
+    with smtplib.SMTP(host, settings.smtp_port, timeout=30) as server:
+        server.starttls()
+        server.login(settings.smtp_user, settings.smtp_password)
+        server.sendmail(msg["From"], to_emails, msg.as_string())
+
+
+def _send_email_sync(to_emails: list[str], subject: str, html_body: str):
+    """Send email — uses Gmail API if configured, else SMTP."""
     try:
-        # Resolve to IPv4 to avoid "Network is unreachable" on hosts without IPv6
-        host = _resolve_ipv4(settings.smtp_host, settings.smtp_port)
-        with smtplib.SMTP(host, settings.smtp_port, timeout=30) as server:
-            server.starttls()
-            server.login(settings.smtp_user, settings.smtp_password)
-            server.sendmail(msg["From"], to_emails, msg.as_string())
-        print(f"[EMAIL] Sent to {to_emails}: {subject}")
+        if settings.gmail_refresh_token:
+            _send_via_gmail_api(to_emails, subject, html_body)
+            print(f"[EMAIL] Sent via Gmail API to {to_emails}: {subject}")
+        elif settings.smtp_host and settings.smtp_user:
+            _send_via_smtp(to_emails, subject, html_body)
+            print(f"[EMAIL] Sent via SMTP to {to_emails}: {subject}")
+        else:
+            print(f"[EMAIL] Not configured. Would send to {to_emails}: {subject}")
     except Exception as e:
         print(f"[EMAIL] Failed: {e}")
 
